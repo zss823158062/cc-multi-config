@@ -67,6 +67,7 @@ mod tests {
                 default_model: Some("relay-opus-model-id".to_string()),
             },
             custom_env: None,
+            group_id: Some("opus".to_string()),
         };
 
         let initial_json = r#"{"permissions": {"allow": []}}"#;
@@ -94,6 +95,7 @@ mod tests {
             auth_token: "secret-new-token".to_string(),
             models: NodeModels::default(),
             custom_env: None,
+            group_id: Some("sonnet".to_string()),
         };
 
         let current = r#"{"env": {"ANTHROPIC_AUTH_TOKEN": "secret-old-token"}}"#;

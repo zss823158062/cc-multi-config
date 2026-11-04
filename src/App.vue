@@ -88,6 +88,11 @@ const currentGroup = computed(() => {
   return groups.value.find((g) => g.id === currentGroupId.value) || null;
 });
 
+const currentGroupNodes = computed(() => {
+  if (!currentGroup.value) return [];
+  return nodes.value.filter((n) => n.groupId === currentGroup.value?.id);
+});
+
 const activeNodeForCurrentGroup = computed(() => {
   if (!currentGroup.value?.activeNodeId) return null;
   return nodes.value.find((n) => n.id === currentGroup.value?.activeNodeId) || null;
@@ -184,6 +189,19 @@ async function loadData() {
     configFiles.value = files || [];
     hostOs.value = os;
 
+    // 自动兼容无 groupId 的历史节点并同步回存储
+    if (groups.value.length > 0) {
+      for (const n of nodes.value) {
+        if (!n.groupId) {
+          const matched = groups.value.find((g) => g.activeNodeId === n.id || g.defaultNodeId === n.id) || groups.value[0];
+          if (matched) {
+            n.groupId = matched.id;
+            api.saveNode(n, false).catch(() => {});
+          }
+        }
+      }
+    }
+
     // Automatically set OS based on real host platform!
     selectedOsPreview.value = os.isWindows ? 'Windows' : 'macOS';
 
@@ -203,7 +221,7 @@ async function loadData() {
 function openAddGroup() {
   newGroupName.value = '';
   newGroupSlug.value = '';
-  newGroupInitialNodeId.value = nodes.value[0]?.id || '';
+  newGroupInitialNodeId.value = '';
   showCreateGroupModal.value = true;
 }
 
@@ -238,12 +256,13 @@ async function handleCreateGroup() {
 
 async function handleDeleteCurrentGroup() {
   if (!currentGroup.value) return;
-  const ok = confirm(`确定删除模型分组「${currentGroup.value.name}」吗？\n配置文件 ${currentGroup.value.settingsFile} 也将被移除。`);
+  const ok = confirm(`确定删除模型分组「${currentGroup.value.name}」？\n配置文件 ${currentGroup.value.settingsFile} 也会被移除。`);
   if (!ok) return;
 
   try {
     const gid = currentGroup.value.id;
     await api.deleteGroup(gid, true);
+    nodes.value = nodes.value.filter((n) => n.groupId !== gid);
     groups.value = groups.value.filter((g) => g.id !== gid);
     currentGroupId.value = groups.value[0]?.id || '';
     configFiles.value = await api.listConfigFiles().catch(() => []);
@@ -271,6 +290,10 @@ async function handleSwitchNode(nodeId: string) {
 }
 
 function openAddNode() {
+  if (!currentGroup.value) {
+    notify('请先在上方下拉框选择或新建模型分组', 'warning');
+    return;
+  }
   const id = `node-${Date.now().toString(36)}`;
   editingNode.value = {
     isNew: true,
@@ -286,6 +309,7 @@ function openAddNode() {
         haiku: 'claude-3-7-sonnet-20250219',
         defaultModel: 'claude-3-7-sonnet-20250219',
       },
+      groupId: currentGroup.value.id,
     },
   };
   showNodeModal.value = true;
@@ -313,7 +337,12 @@ async function handleSaveNode() {
   // 认证模式固定为 authToken
   n.authMode = 'authToken';
 
-  // 仅保留默认模型字段，其他映射字段与默认模型自动保持一致
+  // 绑定当前所属分组
+  if (currentGroup.value) {
+    n.groupId = currentGroup.value.id;
+  }
+
+  // 仅保留默认模型字段，映射字段与默认模型自动保持一致
   const targetModel = n.models.defaultModel?.trim() || 'claude-3-7-sonnet-20250219';
   n.models.defaultModel = targetModel;
   n.models.opus = targetModel;
@@ -339,41 +368,62 @@ async function handleSaveNode() {
 }
 
 async function handleDeleteNode(nodeId: string) {
-  if (confirm('确定删除此中转节点吗？')) {
-    try {
-      await api.deleteNode(nodeId);
-      nodes.value = nodes.value.filter((n) => n.id !== nodeId);
-      if (currentGroup.value && currentGroup.value.activeNodeId === nodeId) {
+  const nodeToDelete = nodes.value.find((n) => n.id === nodeId);
+  const name = nodeToDelete?.name || nodeId;
+  const ok = confirm(`确定删除节点「${name}」？`);
+  if (!ok) return;
+
+  try {
+    await api.deleteNode(nodeId);
+    nodes.value = nodes.value.filter((n) => n.id !== nodeId);
+
+    if (currentGroup.value?.activeNodeId === nodeId) {
+      const remainingGroupNodes = currentGroupNodes.value;
+      if (remainingGroupNodes.length > 0) {
+        await handleSwitchNode(remainingGroupNodes[0].id);
+      } else {
         currentGroup.value.activeNodeId = null;
       }
-      notify('节点已删除', 'info');
-    } catch (err: any) {
-      notify(`删除失败: ${err}`, 'error');
     }
+    notify(`已删除节点「${name}」`, 'info');
+  } catch (err: any) {
+    notify(`删除失败: ${err}`, 'error');
   }
 }
 
 // Test Nodes
 async function handleTestAllNodes() {
-  if (nodes.value.length === 0) {
-    notify('暂无节点可测试，请先添加节点', 'warning');
+  if (currentGroupNodes.value.length === 0) {
+    notify('当前分组暂无节点可测试，请先添加节点', 'warning');
     return;
   }
   if (isTestingAll.value) return;
   isTestingAll.value = true;
 
-  for (const n of nodes.value) {
+  for (const n of currentGroupNodes.value) {
     nodeTestingState.value[n.id] = { testing: true };
   }
 
   try {
-    const results = await api.testAllNodes(false);
-    for (const res of results) {
-      nodeTestingState.value[res.nodeId] = { testing: false, result: res };
-    }
-    notify('节点测速完成', 'success');
+    const promises = currentGroupNodes.value.map(async (n) => {
+      try {
+        const res = await api.testNode(n, false);
+        nodeTestingState.value[n.id] = { testing: false, result: res };
+      } catch (err: any) {
+        nodeTestingState.value[n.id] = {
+          testing: false,
+          result: {
+            nodeId: n.id,
+            connectivityOk: false,
+            message: `测试失败: ${err}`,
+          },
+        };
+      }
+    });
+    await Promise.all(promises);
+    notify('当前分组节点测试完成', 'success');
   } catch (err: any) {
-    notify(`测速异常: ${err}`, 'error');
+    notify(`测试异常: ${err}`, 'error');
   } finally {
     isTestingAll.value = false;
   }
@@ -579,13 +629,13 @@ function openFilePreview(file: ConfigFileItem) {
 
             <!-- Nodes Cards List -->
             <div class="nodes-list-box">
-              <div v-if="nodes.length === 0" class="empty-state-card">
-                <p class="empty-title">暂无中转节点</p>
-                <p class="empty-desc">点击下方「+ 添加节点」添加你的第一个中转 API 节点</p>
+              <div v-if="currentGroupNodes.length === 0" class="empty-state-card">
+                <p class="empty-title">当前分组暂无中转节点</p>
+                <p class="empty-desc">点击下方「+ 添加节点」为此分组添加中转 API 节点</p>
               </div>
 
               <div
-                v-for="node in nodes"
+                v-for="node in currentGroupNodes"
                 :key="node.id"
                 class="node-item-card"
                 :class="{ active: currentGroup?.activeNodeId === node.id }"
@@ -631,7 +681,7 @@ function openFilePreview(file: ConfigFileItem) {
                     >
                       失败
                     </span>
-                    <span v-else class="speed-none">—</span>
+                    <span v-else class="speed-none">未测试</span>
                   </div>
                 </div>
 

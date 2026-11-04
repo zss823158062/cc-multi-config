@@ -30,6 +30,7 @@ pub struct RelayNode {
     pub auth_token: String,
     pub models: NodeModels,
     pub custom_env: Option<HashMap<String, String>>,
+    pub group_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

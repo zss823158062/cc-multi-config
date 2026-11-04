@@ -60,7 +60,29 @@ pub fn load_nodes_config() -> NodesConfig {
     let p = nodes_path();
     if p.exists() {
         if let Ok(content) = fs::read_to_string(&p) {
-            if let Ok(cfg) = serde_json::from_str::<NodesConfig>(&content) {
+            if let Ok(mut cfg) = serde_json::from_str::<NodesConfig>(&content) {
+                let launcher_cfg = load_launcher_config();
+                let mut changed = false;
+                for node in cfg.nodes.iter_mut() {
+                    if node.group_id.is_none() {
+                        let mut matched = false;
+                        for g in &launcher_cfg.groups {
+                            if g.active_node_id.as_deref() == Some(&node.id) || g.default_node_id.as_deref() == Some(&node.id) {
+                                node.group_id = Some(g.id.clone());
+                                changed = true;
+                                matched = true;
+                                break;
+                            }
+                        }
+                        if !matched && !launcher_cfg.groups.is_empty() {
+                            node.group_id = Some(launcher_cfg.groups[0].id.clone());
+                            changed = true;
+                        }
+                    }
+                }
+                if changed {
+                    let _ = save_nodes_config(&cfg);
+                }
                 return cfg;
             }
         }
@@ -389,5 +411,11 @@ pub fn delete_group(group_id: &str, delete_file: bool) -> Result<(), String> {
     }
 
     save_launcher_config(&config)?;
+
+    // Also remove nodes belonging to this group
+    let mut nodes_cfg = load_nodes_config();
+    nodes_cfg.nodes.retain(|n| n.group_id.as_deref() != Some(group_id));
+    let _ = save_nodes_config(&nodes_cfg);
+
     Ok(())
 }

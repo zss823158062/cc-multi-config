@@ -21,6 +21,7 @@ export interface RelayNode {
   authToken: string;
   models: NodeModels;
   customEnv?: Record<string, string>;
+  groupId?: string | null;
 }
 
 export interface Preferences {
