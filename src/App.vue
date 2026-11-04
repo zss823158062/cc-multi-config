@@ -621,8 +621,19 @@ function openFilePreview(file: ConfigFileItem) {
                   </div>
                   <div class="meta-speed-wrap">
                     <span v-if="nodeTestingState[node.id]?.testing" class="speed-testing">测速中...</span>
-                    <span v-else-if="nodeTestingState[node.id]?.result?.latencyMs !== undefined" class="speed-ms">
+                    <span
+                      v-else-if="nodeTestingState[node.id]?.result?.latencyMs != null && nodeTestingState[node.id]?.result?.connectivityOk"
+                      class="speed-ms"
+                      :title="nodeTestingState[node.id].result?.message"
+                    >
                       {{ nodeTestingState[node.id].result?.latencyMs }}ms
+                    </span>
+                    <span
+                      v-else-if="nodeTestingState[node.id]?.result && !nodeTestingState[node.id]?.result?.connectivityOk"
+                      class="speed-error"
+                      :title="nodeTestingState[node.id].result?.message || '节点连接失败'"
+                    >
+                      失败
                     </span>
                     <span v-else class="speed-none">—</span>
                   </div>
@@ -1407,12 +1418,20 @@ function openFilePreview(file: ConfigFileItem) {
 
 .speed-ms {
   font-size: 13px;
-  color: #64748b;
+  color: #10b981;
+  font-weight: 500;
 }
 
 .speed-testing {
   font-size: 12px;
   color: #3b82f6;
+}
+
+.speed-error {
+  font-size: 12px;
+  color: #ef4444;
+  font-weight: 500;
+  cursor: help;
 }
 
 .speed-none {

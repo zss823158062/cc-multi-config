@@ -18,7 +18,8 @@ pub async fn test_node_connectivity(node: &RelayNode, test_model: bool) -> NodeT
 
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_secs(6))
-        .danger_accept_invalid_certs(false)
+        .danger_accept_invalid_certs(true)
+        .redirect(reqwest::redirect::Policy::limited(5))
         .build()
     {
         Ok(c) => c,
@@ -34,7 +35,7 @@ pub async fn test_node_connectivity(node: &RelayNode, test_model: bool) -> NodeT
         }
     };
 
-    // 1. Base Connectivity Check (Ping /models or root)
+    // 1. Base Connectivity Check (Ping /models, /v1/models, or root)
     let start_time = Instant::now();
     let ping_url = if base_url.ends_with("/v1") {
         format!("{}/models", base_url)
@@ -59,10 +60,17 @@ pub async fn test_node_connectivity(node: &RelayNode, test_model: bool) -> NodeT
     }
     headers.insert("anthropic-version", HeaderValue::from_static("2023-06-01"));
 
-    let resp_res = client.get(&ping_url)
+    let mut resp_res = client.get(&ping_url)
         .headers(headers.clone())
         .send()
         .await;
+
+    // Fallback: If /v1/models returns 404 or connection error, attempt connecting to base root
+    if resp_res.is_err() || resp_res.as_ref().map(|r| r.status().as_u16()).unwrap_or(0) == 404 {
+        if let Ok(root_resp) = client.get(base_url).headers(headers.clone()).send().await {
+            resp_res = Ok(root_resp);
+        }
+    }
 
     let latency = start_time.elapsed().as_millis() as u64;
 
