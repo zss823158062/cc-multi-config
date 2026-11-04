@@ -285,9 +285,9 @@ function openAddNode() {
       authMode: 'authToken',
       authToken: '',
       models: {
-        opus: 'claude-3-opus-20240229',
+        opus: 'claude-3-7-sonnet-20250219',
         sonnet: 'claude-3-7-sonnet-20250219',
-        haiku: 'claude-3-5-haiku-20241022',
+        haiku: 'claude-3-7-sonnet-20250219',
         defaultModel: 'claude-3-7-sonnet-20250219',
       },
     },
@@ -296,9 +296,14 @@ function openAddNode() {
 }
 
 function openEditNode(node: RelayNode) {
+  const cloned = JSON.parse(JSON.stringify(node));
+  cloned.authMode = 'authToken';
+  if (!cloned.models.defaultModel) {
+    cloned.models.defaultModel = cloned.models.sonnet || cloned.models.opus || cloned.models.haiku || 'claude-3-7-sonnet-20250219';
+  }
   editingNode.value = {
     isNew: false,
-    node: JSON.parse(JSON.stringify(node)),
+    node: cloned,
   };
   showNodeModal.value = true;
 }
@@ -309,6 +314,16 @@ async function handleSaveNode() {
     notify('请填写中转站名称与 Base URL', 'warning');
     return;
   }
+  // 认证模式固定为 authToken
+  n.authMode = 'authToken';
+
+  // 仅保留默认模型字段，其他映射字段与默认模型自动保持一致
+  const targetModel = n.models.defaultModel?.trim() || 'claude-3-7-sonnet-20250219';
+  n.models.defaultModel = targetModel;
+  n.models.opus = targetModel;
+  n.models.sonnet = targetModel;
+  n.models.haiku = targetModel;
+
   try {
     const saved = await api.saveNode(n, true);
     const idx = nodes.value.findIndex((item) => item.id === saved.id);
@@ -888,29 +903,20 @@ function openFilePreview(file: ConfigFileItem) {
 
     <!-- MODAL: ADD / EDIT NODE -->
     <div v-if="showNodeModal" class="modal-overlay" @click.self="showNodeModal = false">
-      <div class="modal-box modal-lg">
+      <div class="modal-box modal-node">
         <div class="modal-head">
           <h3 class="modal-head-title">{{ editingNode.isNew ? '添加中转节点' : '编辑中转节点' }}</h3>
           <button class="modal-head-close" @click="showNodeModal = false">×</button>
         </div>
         <div class="modal-content">
-          <div class="input-grid-2">
-            <div class="input-field-group">
-              <label class="input-label">中转站名称</label>
-              <input
-                type="text"
-                class="styled-input"
-                v-model="editingNode.node.name"
-                placeholder="例如：中转站 A"
-              />
-            </div>
-            <div class="input-field-group">
-              <label class="input-label">认证模式</label>
-              <select class="styled-input" v-model="editingNode.node.authMode">
-                <option value="authToken">ANTHROPIC_AUTH_TOKEN (中转推荐)</option>
-                <option value="apiKey">ANTHROPIC_API_KEY (API Key)</option>
-              </select>
-            </div>
+          <div class="input-field-group">
+            <label class="input-label">中转站名称</label>
+            <input
+              type="text"
+              class="styled-input"
+              v-model="editingNode.node.name"
+              placeholder="例如：中转站 A"
+            />
           </div>
 
           <div class="input-field-group">
@@ -938,50 +944,17 @@ function openFilePreview(file: ConfigFileItem) {
             </div>
           </div>
 
-          <div class="modal-divider-text">
-            <span>模型映射 (覆盖默认模型)</span>
-          </div>
-
-          <div class="input-grid-2">
-            <div class="input-field-group">
-              <label class="input-label">默认模型 (ANTHROPIC_MODEL)</label>
-              <input
-                type="text"
-                class="styled-input"
-                v-model="editingNode.node.models.defaultModel"
-                placeholder="claude-3-7-sonnet-20250219"
-              />
-            </div>
-            <div class="input-field-group">
-              <label class="input-label">Opus 映射模型</label>
-              <input
-                type="text"
-                class="styled-input"
-                v-model="editingNode.node.models.opus"
-                placeholder="claude-3-opus-20240229"
-              />
-            </div>
-          </div>
-
-          <div class="input-grid-2">
-            <div class="input-field-group">
-              <label class="input-label">Sonnet 映射模型</label>
-              <input
-                type="text"
-                class="styled-input"
-                v-model="editingNode.node.models.sonnet"
-                placeholder="claude-3-7-sonnet-20250219"
-              />
-            </div>
-            <div class="input-field-group">
-              <label class="input-label">Haiku 映射模型</label>
-              <input
-                type="text"
-                class="styled-input"
-                v-model="editingNode.node.models.haiku"
-                placeholder="claude-3-5-haiku-20241022"
-              />
-            </div>
+          <div class="input-field-group">
+            <label class="input-label">默认模型 (ANTHROPIC_MODEL)</label>
+            <input
+              type="text"
+              class="styled-input"
+              v-model="editingNode.node.models.defaultModel"
+              placeholder="例如：claude-3-7-sonnet-20250219 或 cc/claude-opus-5"
+            />
+            <span class="input-helper-text">
+              其他映射模型（Opus / Sonnet / Haiku）将自动与默认模型保持一致
+            </span>
           </div>
         </div>
         <div class="modal-actions">
@@ -1846,6 +1819,10 @@ function openFilePreview(file: ConfigFileItem) {
 
 .modal-lg {
   width: 520px;
+}
+
+.modal-node {
+  width: 440px;
 }
 
 .modal-head {
