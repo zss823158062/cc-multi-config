@@ -1,6 +1,6 @@
 [package]
 name = "cc-multi-config"
-version = "1.0.0"
+version = "1.0.1"
 description = "CC Multi-Instance Configurator"
 authors = ["Antigravity"]
 edition = "2021"
