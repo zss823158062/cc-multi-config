@@ -4,10 +4,17 @@ use crate::models::Preferences;
 
 pub const DEFAULT_SCHEMA_VERSION: u32 = 1;
 
-/// Get the AppData directory for the Launcher (e.g. %APPDATA%\ClaudeLauncher or ~/Library/Application Support/ClaudeLauncher)
+/// Get the AppData directory for the application (e.g. %APPDATA%\CCConfig or ~/Library/Application Support/CCConfig)
 pub fn get_app_data_dir() -> PathBuf {
     if let Some(config_dir) = dirs::config_dir() {
-        let dir = config_dir.join("ClaudeLauncher");
+        let legacy_dir = config_dir.join("ClaudeLauncher");
+        let dir = config_dir.join("CCConfig");
+        
+        // Auto-migrate from ClaudeLauncher if CCConfig doesn't exist yet but ClaudeLauncher does
+        if !dir.exists() && legacy_dir.exists() {
+            let _ = fs::rename(&legacy_dir, &dir);
+        }
+
         let _ = fs::create_dir_all(&dir);
         let _ = fs::create_dir_all(dir.join("backups"));
         let _ = fs::create_dir_all(dir.join("logs"));
@@ -16,7 +23,7 @@ pub fn get_app_data_dir() -> PathBuf {
     
     // Fallback to home dir
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
-    let dir = home.join(".claude_launcher");
+    let dir = home.join(".cc_config");
     let _ = fs::create_dir_all(&dir);
     let _ = fs::create_dir_all(dir.join("backups"));
     let _ = fs::create_dir_all(dir.join("logs"));

@@ -1,6 +1,6 @@
-# Claude 多实例配置启动器 (Claude Multi-Instance Launcher)
+# CC 多实例配置器 (CC Multi-Instance Configurator)
 
-面向 **Claude Code** 的跨平台桌面启动器，基于 **Tauri 2 + Vue 3 + TypeScript + Rust** 构建。
+面向 **Claude Code** 的跨平台桌面多实例配置与中转节点切换工具，基于 **Tauri 2 + Vue 3 + TypeScript + Rust** 构建。
 
 ## 🌟 核心价值与业务规则
 
@@ -67,7 +67,7 @@ pnpm tauri build
 ### 4. 运行现有 Debug 可执行文件
 已预先完成编译，可直接双击运行：
 ```powershell
-.\src-tauri\target\debug\claude-launcher.exe
+.\src-tauri\target\debug\cc-multi-config.exe
 ```
 
 ---

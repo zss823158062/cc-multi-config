@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    claude_launcher_lib::run()
+    cc_multi_config_lib::run()
 }

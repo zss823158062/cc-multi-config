@@ -481,13 +481,13 @@ function openFilePreview(file: ConfigFileItem) {
         <!-- HEADER -->
         <header class="app-header">
           <div class="header-left">
-            <img src="/logo.png" class="app-header-logo" alt="Claude Launcher Logo" />
-            <h1 class="app-title">Claude Launcher</h1>
+            <img src="/logo.png" class="app-header-logo" alt="CC 多实例配置器 Logo" />
+            <h1 class="app-title">CC 多实例配置器</h1>
           </div>
 
           <div class="header-right">
             <span class="badge-ready" title="基础配置目录正常">配置就绪</span>
-            <button class="icon-gear-btn" @click="currentView = 'settings'" title="进入启动器设置页面">
+            <button class="icon-gear-btn" @click="currentView = 'settings'" title="进入配置器设置页面">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -701,14 +701,14 @@ function openFilePreview(file: ConfigFileItem) {
         <!-- HEADER -->
         <header class="app-header">
           <div class="header-left">
-            <img src="/logo.png" class="app-header-logo" alt="Claude Launcher Logo" />
-            <h1 class="app-title">Claude Launcher • 设置</h1>
+            <img src="/logo.png" class="app-header-logo" alt="CC 多实例配置器 Logo" />
+            <h1 class="app-title">CC 多实例配置器 • 设置</h1>
           </div>
 
           <div class="header-right">
             <span class="badge-concept">概念界面</span>
-            <button class="btn-nav-back" @click="currentView = 'main'" title="返回启动器主界面">
-              返回启动器
+            <button class="btn-nav-back" @click="currentView = 'main'" title="返回配置器主界面">
+              返回配置器
             </button>
           </div>
         </header>
