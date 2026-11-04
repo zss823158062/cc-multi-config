@@ -128,7 +128,7 @@ pnpm tauri build
 ### 4. 直接运行本地已编译版本
 在 Windows 下可直接双击运行现成的可执行文件：
 ```powershell
-.\src-tauri\target\debug\cc-multi-config.exe
+.\src-tauri\target\release\cc-multi-config.exe
 ```
 
 ---
@@ -151,3 +151,4 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ## 📄 开源许可
 
 本项目遵循 [MIT License](LICENSE) 开源协议。
+
