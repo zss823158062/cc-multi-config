@@ -1,5 +1,9 @@
 use std::path::Path;
 use std::process::Command;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 use crate::models::{
     Group, RelayNode, Preferences, ConfigDirInfo, BaseSettingsStatus,
     ClaudeBinaryInfo, TerminalInfo, NodeTestResult, SettingsDiffResult,
@@ -197,7 +201,10 @@ pub fn select_folder(default_path: Option<String>) -> Result<Option<String>, Str
             initial_dir_clause
         );
 
-        let output = Command::new("powershell.exe")
+        let mut ps_cmd = Command::new("powershell.exe");
+        #[cfg(windows)]
+        ps_cmd.creation_flags(CREATE_NO_WINDOW);
+        let output = ps_cmd
             .arg("-NoProfile")
             .arg("-Command")
             .arg(&ps_code)

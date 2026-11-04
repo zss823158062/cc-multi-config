@@ -6,7 +6,6 @@ import type {
   RelayNode,
   Preferences,
   ConfigDirInfo,
-  ClaudeBinaryInfo,
   NodeTestResult,
   ConfigFileItem,
   OsInfo,
@@ -17,7 +16,6 @@ const currentView = ref<'main' | 'settings'>('main');
 
 // State
 const configDirInfo = ref<ConfigDirInfo | null>(null);
-const claudeBinary = ref<ClaudeBinaryInfo | null>(null);
 const preferences = ref<Preferences>({
   configDirMode: 'auto',
   customClaudeConfigDir: null,
@@ -158,11 +156,10 @@ onMounted(async () => {
 
 async function loadData() {
   try {
-    const [cfg, allNodes, dirInfo, binaryInfo, files, os] = await Promise.all([
+    const [cfg, allNodes, dirInfo, files, os] = await Promise.all([
       api.getLauncherConfig(),
       api.getNodes(),
       api.getClaudeConfigDirInfo(),
-      api.detectClaudeBinary(),
       api.listConfigFiles().catch(() => []),
       api.getOsInfo().catch(() => ({
         os: 'windows',
@@ -184,7 +181,6 @@ async function loadData() {
     };
     customDirInput.value = cfg.preferences?.customClaudeConfigDir || '';
     configDirInfo.value = dirInfo;
-    claudeBinary.value = binaryInfo;
     configFiles.value = files || [];
     hostOs.value = os;
 

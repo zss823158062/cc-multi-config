@@ -1,5 +1,11 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 use crate::models::{ClaudeBinaryInfo, TerminalInfo, LaunchResult};
 
 /// Detect claude binary path on the system
@@ -24,7 +30,9 @@ pub fn detect_claude_binary(custom_path: Option<&str>) -> ClaudeBinaryInfo {
     // 2. Check PATH using where.exe or which
     #[cfg(windows)]
     {
-        if let Ok(output) = Command::new("where.exe").arg("claude").output() {
+        let mut cmd = Command::new("where.exe");
+        cmd.creation_flags(CREATE_NO_WINDOW);
+        if let Ok(output) = cmd.arg("claude").output() {
             if output.status.success() {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 for line in stdout.lines() {
@@ -112,7 +120,10 @@ pub fn detect_claude_binary(custom_path: Option<&str>) -> ClaudeBinaryInfo {
 }
 
 fn get_claude_version(path: &Path) -> Option<String> {
-    let output = Command::new(path).arg("--version").output().ok()?;
+    let mut cmd = Command::new(path);
+    #[cfg(windows)]
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    let output = cmd.arg("--version").output().ok()?;
     if output.status.success() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         Some(stdout.trim().to_string())
@@ -128,7 +139,9 @@ pub fn get_available_terminals() -> Vec<TerminalInfo> {
     #[cfg(windows)]
     {
         // Check Windows Terminal (wt.exe)
-        let wt_available = Command::new("where.exe").arg("wt.exe").output().map(|o| o.status.success()).unwrap_or(false);
+        let mut wt_cmd = Command::new("where.exe");
+        wt_cmd.creation_flags(CREATE_NO_WINDOW);
+        let wt_available = wt_cmd.arg("wt.exe").output().map(|o| o.status.success()).unwrap_or(false);
         list.push(TerminalInfo {
             id: "wt".to_string(),
             name: "Windows Terminal (推荐)".to_string(),
