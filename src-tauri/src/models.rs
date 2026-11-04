@@ -66,22 +66,7 @@ impl Default for LauncherConfig {
     fn default() -> Self {
         Self {
             schema_version: 1,
-            groups: vec![
-                Group {
-                    id: "opus".to_string(),
-                    name: "Opus".to_string(),
-                    settings_file: "my-opus.json".to_string(),
-                    active_node_id: None,
-                    default_node_id: None,
-                },
-                Group {
-                    id: "sonnet".to_string(),
-                    name: "Sonnet".to_string(),
-                    settings_file: "my-sonnet.json".to_string(),
-                    active_node_id: None,
-                    default_node_id: None,
-                },
-            ],
+            groups: vec![],
             preferences: Preferences::default(),
         }
     }
@@ -98,22 +83,7 @@ impl Default for NodesConfig {
     fn default() -> Self {
         Self {
             schema_version: 1,
-            nodes: vec![
-                RelayNode {
-                    id: "node-official".to_string(),
-                    name: "Anthropic 官方直连".to_string(),
-                    base_url: "https://api.anthropic.com".to_string(),
-                    auth_mode: "authToken".to_string(),
-                    auth_token: "".to_string(),
-                    models: NodeModels {
-                        opus: Some("claude-3-opus-20240229".to_string()),
-                        sonnet: Some("claude-3-7-sonnet-20250219".to_string()),
-                        haiku: Some("claude-3-5-haiku-20241022".to_string()),
-                        default_model: Some("claude-3-7-sonnet-20250219".to_string()),
-                    },
-                    custom_env: None,
-                }
-            ],
+            nodes: vec![],
         }
     }
 }
