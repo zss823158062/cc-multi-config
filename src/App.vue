@@ -688,10 +688,6 @@ function openFilePreview(file: ConfigFileItem) {
               </svg>
               <span>{{ copiedTooltip ? '已复制启动命令！' : '复制启动命令' }}</span>
             </button>
-
-            <p class="bottom-disclaimer">
-              以上是交互概念原型，节点为示例数据；实际配置读写和终端启动由桌面程序实现。
-            </p>
           </section>
         </main>
       </template>
@@ -706,7 +702,6 @@ function openFilePreview(file: ConfigFileItem) {
           </div>
 
           <div class="header-right">
-            <span class="badge-concept">概念界面</span>
             <button class="btn-nav-back" @click="currentView = 'main'" title="返回配置器主界面">
               返回配置器
             </button>
