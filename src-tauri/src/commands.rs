@@ -309,18 +309,14 @@ pub fn list_config_files() -> Result<Vec<ConfigFileItem>, String> {
         for entry in entries.flatten() {
             let path = entry.path();
             if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
-                if file_name == "settings.json" {
+                if file_name == "settings.json" || file_name.starts_with('.') {
                     continue;
                 }
-                if file_name.ends_with(".json") {
-                    let file_type = if file_name.starts_with("my-") {
-                        "group".to_string()
-                    } else {
-                        "other".to_string()
-                    };
+                // Only show my-*.json group files
+                if file_name.starts_with("my-") && file_name.ends_with(".json") {
                     items.push(ConfigFileItem {
                         name: file_name.to_string(),
-                        file_type,
+                        file_type: "group".to_string(),
                         path: path.to_string_lossy().to_string(),
                         exists: true,
                         size_bytes: entry.metadata().map(|m| m.len()).unwrap_or(0),

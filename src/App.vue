@@ -107,12 +107,11 @@ const settingsDirDisplay = computed(() => {
   if (selectedOsPreview.value === 'macOS') {
     return '~/.claude/';
   } else {
-    // Windows default representation
     return configDirInfo.value?.resolvedPath || '%USERPROFILE%\\.claude\\';
   }
 });
 
-function notify(text: string, type: 'success' | 'warning' | 'error' | 'info' = 'info', ms = 3500) {
+function notify(text: string, type: 'success' | 'warning' | 'error' | 'info' = 'info', ms = 3000) {
   statusBanner.value = { text, type };
   if (ms > 0) {
     setTimeout(() => {
@@ -194,7 +193,6 @@ async function handleCreateGroup() {
     currentGroupId.value = newGroup.id;
     showCreateGroupModal.value = false;
     notify(`已创建分组「${newGroup.name}」(${newGroup.settingsFile})`, 'success');
-    // Refresh config files list
     configFiles.value = await api.listConfigFiles().catch(() => []);
   } catch (err: any) {
     notify(`创建分组失败: ${err}`, 'error', 5000);
@@ -229,7 +227,7 @@ async function handleSwitchNode(nodeId: string) {
   try {
     await api.switchGroupNode(currentGroup.value.id, nodeId);
     currentGroup.value.activeNodeId = nodeId;
-    notify(`已切换至节点「${nodes.value.find((n) => n.id === nodeId)?.name}」并更新配置`, 'success');
+    notify(`已切换至节点「${nodes.value.find((n) => n.id === nodeId)?.name}」`, 'success');
   } catch (err: any) {
     notify(`切换节点失败: ${err}`, 'error');
   }
@@ -422,13 +420,11 @@ async function setConfigDirMode(mode: 'auto' | 'custom') {
 }
 
 function openFilePreview(file: ConfigFileItem) {
-  // If it's a group file, we can open in JSON viewer
   const group = groups.value.find((g) => g.settingsFile === file.name);
   if (group) {
     currentGroupId.value = group.id;
     handleViewSettingsJson();
   } else {
-    // Open in Explorer or default editor
     api.openFileInEditor(file.path).catch(() => {
       api.openInExplorer(file.path);
     });
@@ -437,395 +433,384 @@ function openFilePreview(file: ConfigFileItem) {
 </script>
 
 <template>
-  <div class="window-wrapper">
-    <!-- ==================== VIEW 1: MAIN LAUNCHER ==================== -->
-    <div v-if="currentView === 'main'" class="launcher-card">
-      <!-- HEADER -->
-      <header class="card-header">
-        <div class="header-title-box">
-          <div class="app-icon">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="4" />
-              <polyline points="7 10 10 13 7 16" />
-              <line x1="12" y1="16" x2="16" y2="16" />
-            </svg>
-          </div>
-          <h1 class="app-title">Claude Launcher</h1>
-        </div>
-
-        <div class="header-badges">
-          <span class="status-badge ready" title="基础配置目录正常">配置就绪</span>
-          <button class="settings-gear-btn" @click="currentView = 'settings'" title="进入启动器设置页面">
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-          </button>
-        </div>
-      </header>
-
-      <!-- ALERT BANNER -->
-      <div v-if="statusBanner" class="status-toast" :class="statusBanner.type">
-        <span>{{ statusBanner.text }}</span>
-        <button class="toast-close" @click="statusBanner = null">×</button>
-      </div>
-
-      <!-- SECTION 1: MODEL GROUP SELECTOR -->
-      <section class="section-group">
-        <div class="label-row">
-          <label class="section-label">当前模型分组 / 配置文件</label>
-          <button
-            v-if="currentGroup"
-            class="group-delete-link"
-            @click="handleDeleteCurrentGroup"
-            title="删除当前选中的分组"
-          >
-            删除此分组
-          </button>
-        </div>
-
-        <div class="group-select-row">
-          <div class="custom-select-wrap">
-            <select
-              v-if="groups.length > 0"
-              class="group-select"
-              v-model="currentGroupId"
-            >
-              <option v-for="g in groups" :key="g.id" :value="g.id">
-                {{ g.name }}
-              </option>
-            </select>
-            <div v-else class="empty-select-placeholder" @click="openAddGroup">
-              暂无模型分组，点击右侧「+」新建分组
+  <div class="app-shell">
+    <div class="app-container">
+      <!-- ==================== VIEW 1: MAIN LAUNCHER ==================== -->
+      <template v-if="currentView === 'main'">
+        <!-- HEADER -->
+        <header class="app-header">
+          <div class="header-left">
+            <div class="app-icon">
+              <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="4" />
+                <polyline points="7 10 10 13 7 16" />
+                <line x1="12" y1="16" x2="16" y2="16" />
+              </svg>
             </div>
-            <svg class="select-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="6 9 12 15 18 9"></polyline>
-            </svg>
+            <h1 class="app-title">Claude Launcher</h1>
           </div>
 
-          <!-- Add Group Button -->
-          <button class="add-group-btn" @click="openAddGroup" title="新建模型分组">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="5" x2="12" y2="19"></line>
-              <line x1="5" y1="12" x2="19" y2="12"></line>
-            </svg>
-          </button>
-        </div>
-
-        <!-- Settings Filename subtitle -->
-        <div class="settings-file-text">
-          <span
-            v-if="currentGroup"
-            class="clickable-file"
-            @click="handleViewSettingsJson"
-            title="点击查看 / 编辑此分组 JSON 配置"
-          >
-            {{ currentGroup.settingsFile }}
-          </span>
-          <span v-else class="empty-file-hint">my-&lt;slug&gt;.json</span>
-        </div>
-      </section>
-
-      <!-- SECTION 2: RELAY NODES -->
-      <section class="section-nodes">
-        <div class="nodes-header-row">
-          <h2 class="nodes-title">中转节点</h2>
-          <span class="nodes-desc">选择后更新当前分组配置</span>
-        </div>
-
-        <!-- Node Cards List -->
-        <div class="nodes-container">
-          <div v-if="nodes.length === 0" class="empty-nodes-box">
-            <p>暂无中转节点</p>
-            <span class="empty-sub">点击下方「+ 添加节点」添加你的第一个中转 API 节点</span>
+          <div class="header-right">
+            <span class="badge-ready" title="基础配置目录正常">配置就绪</span>
+            <button class="icon-gear-btn" @click="currentView = 'settings'" title="进入启动器设置页面">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+            </button>
           </div>
+        </header>
 
-          <div
-            v-for="node in nodes"
-            :key="node.id"
-            class="node-card"
-            :class="{ active: currentGroup?.activeNodeId === node.id }"
-            @click="handleSwitchNode(node.id)"
-          >
-            <!-- Radio / Check Status Icon -->
-            <div class="node-icon-box">
-              <div v-if="currentGroup?.activeNodeId === node.id" class="check-circle">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                  <polyline points="20 6 9 17 4 12"></polyline>
+        <!-- TOAST BANNER -->
+        <div v-if="statusBanner" class="status-toast" :class="statusBanner.type">
+          <span>{{ statusBanner.text }}</span>
+          <button class="toast-close" @click="statusBanner = null">×</button>
+        </div>
+
+        <!-- MAIN SCROLLABLE CONTENT AREA -->
+        <main class="main-content">
+          <!-- SECTION 1: MODEL GROUP SELECTOR -->
+          <section class="block-section">
+            <div class="block-label-row">
+              <span class="block-label">当前模型分组 / 配置文件</span>
+              <button
+                v-if="currentGroup"
+                class="btn-text-danger"
+                @click="handleDeleteCurrentGroup"
+                title="删除当前选中的分组"
+              >
+                删除分组
+              </button>
+            </div>
+
+            <div class="group-select-row">
+              <div class="select-container">
+                <select
+                  v-if="groups.length > 0"
+                  class="styled-select"
+                  v-model="currentGroupId"
+                >
+                  <option v-for="g in groups" :key="g.id" :value="g.id">
+                    {{ g.name }}
+                  </option>
+                </select>
+                <div v-else class="select-empty-box" @click="openAddGroup">
+                  暂无模型分组，点击右侧「+」新建分组
+                </div>
+                <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
               </div>
-              <div v-else class="empty-circle"></div>
+
+              <!-- Circular Add Button -->
+              <button class="btn-circle-add" @click="openAddGroup" title="新建模型分组">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="12" y1="5" x2="12" y2="19"></line>
+                  <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+              </button>
             </div>
 
-            <!-- Node Info -->
-            <div class="node-content">
-              <div class="node-name-row">
-                <span class="node-name">{{ node.name }}</span>
-              </div>
-              <div class="node-url">{{ node.baseUrl }}</div>
+            <div class="settings-filename-sub">
+              <span
+                v-if="currentGroup"
+                class="file-link"
+                @click="handleViewSettingsJson"
+                title="点击查看 / 编辑此分组 JSON 配置"
+              >
+                {{ currentGroup.settingsFile }}
+              </span>
+              <span v-else class="file-link-disabled">my-&lt;slug&gt;.json</span>
+            </div>
+          </section>
+
+          <!-- SECTION 2: RELAY NODES -->
+          <section class="block-section">
+            <div class="block-header-row">
+              <h2 class="block-title">中转节点</h2>
+              <span class="block-sub">选择后更新当前分组配置</span>
             </div>
 
-            <!-- Right Status / Actions -->
-            <div class="node-meta-box">
-              <div class="meta-top">
-                <span v-if="currentGroup?.activeNodeId === node.id" class="badge-current">
-                  当前节点
-                </span>
-                <span v-else class="btn-switch-text">切换</span>
+            <!-- Nodes Cards List -->
+            <div class="nodes-list-box">
+              <div v-if="nodes.length === 0" class="empty-state-card">
+                <p class="empty-title">暂无中转节点</p>
+                <p class="empty-desc">点击下方「+ 添加节点」添加你的第一个中转 API 节点</p>
               </div>
 
-              <div class="meta-bottom">
-                <span v-if="nodeTestingState[node.id]?.testing" class="latency-testing">测速中...</span>
-                <span v-else-if="nodeTestingState[node.id]?.result?.latencyMs !== undefined" class="latency-ms">
-                  {{ nodeTestingState[node.id].result?.latencyMs }}ms
-                </span>
-                <span v-else class="latency-empty">—</span>
+              <div
+                v-for="node in nodes"
+                :key="node.id"
+                class="node-item-card"
+                :class="{ active: currentGroup?.activeNodeId === node.id }"
+                @click="handleSwitchNode(node.id)"
+              >
+                <!-- Radio Status Circle -->
+                <div class="node-left-icon">
+                  <div v-if="currentGroup?.activeNodeId === node.id" class="radio-check-circle">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                  </div>
+                  <div v-else class="radio-empty-circle"></div>
+                </div>
+
+                <!-- Info -->
+                <div class="node-info-col">
+                  <div class="node-title">{{ node.name }}</div>
+                  <div class="node-suburl">{{ node.baseUrl }}</div>
+                </div>
+
+                <!-- Right Meta -->
+                <div class="node-meta-col">
+                  <div class="meta-tag-wrap">
+                    <span v-if="currentGroup?.activeNodeId === node.id" class="badge-active-node">
+                      当前节点
+                    </span>
+                    <span v-else class="text-switch">切换</span>
+                  </div>
+                  <div class="meta-speed-wrap">
+                    <span v-if="nodeTestingState[node.id]?.testing" class="speed-testing">测速中...</span>
+                    <span v-else-if="nodeTestingState[node.id]?.result?.latencyMs !== undefined" class="speed-ms">
+                      {{ nodeTestingState[node.id].result?.latencyMs }}ms
+                    </span>
+                    <span v-else class="speed-none">—</span>
+                  </div>
+                </div>
+
+                <!-- Hover Edit Icon -->
+                <button
+                  class="btn-card-edit"
+                  @click.stop="openEditNode(node)"
+                  title="编辑节点"
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                  </svg>
+                </button>
               </div>
             </div>
 
-            <!-- Quick Edit Menu (Icon Button) -->
+            <!-- Two Pill Action Buttons -->
+            <div class="nodes-pill-row">
+              <button class="btn-pill" @click="openAddNode">
+                <span class="plus-icon">+</span>
+                <span>添加节点</span>
+              </button>
+              <button class="btn-pill" :disabled="isTestingAll" @click="handleTestAllNodes">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                </svg>
+                <span>{{ isTestingAll ? '正在测试...' : '测试节点' }}</span>
+              </button>
+            </div>
+          </section>
+
+          <!-- SECTION 3: CONFIG PREVIEW & LAUNCH -->
+          <section class="preview-section">
+            <div class="preview-top-row">
+              <h2 class="preview-heading">启动配置预览</h2>
+              <span class="badge-pill-gray">独立会话</span>
+            </div>
+
+            <div class="preview-group-desc">
+              当前分组：
+              <span v-if="currentGroup">
+                <strong>{{ currentGroup.name }}</strong> ·
+                <strong>{{ activeNodeForCurrentGroup?.name || '未选择节点' }}</strong>
+              </span>
+              <span v-else class="text-gray-light">未选择分组</span>
+            </div>
+
+            <!-- Command Text Box -->
+            <div class="code-box-line">
+              <code>{{ previewCommand }}</code>
+            </div>
+
+            <!-- Full Width Black Pill Button -->
             <button
-              class="node-edit-icon"
-              @click.stop="openEditNode(node)"
-              title="编辑此节点"
+              class="btn-black-pill"
+              :class="{ copied: copiedTooltip }"
+              @click="handleCopyCommand"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+              <svg v-if="!copiedTooltip" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
               </svg>
+              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+              </svg>
+              <span>{{ copiedTooltip ? '已复制启动命令！' : '复制启动命令' }}</span>
             </button>
-          </div>
-        </div>
 
-        <!-- Action Pill Buttons: Add Node & Test Nodes -->
-        <div class="nodes-action-row">
-          <button class="pill-btn" @click="openAddNode">
-            <span class="btn-icon">+</span>
-            <span>添加节点</span>
-          </button>
-          <button class="pill-btn" :disabled="isTestingAll" @click="handleTestAllNodes">
-            <svg class="btn-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <span>{{ isTestingAll ? '正在测试...' : '测试节点' }}</span>
-          </button>
-        </div>
-      </section>
+            <p class="bottom-disclaimer">
+              以上是交互概念原型，节点为示例数据；实际配置读写和终端启动由桌面程序实现。
+            </p>
+          </section>
+        </main>
+      </template>
 
-      <!-- SECTION 3: LAUNCH CONFIG PREVIEW -->
-      <section class="section-preview">
-        <div class="preview-header-row">
-          <h2 class="preview-title">启动配置预览</h2>
-          <span class="badge-session">独立会话</span>
-        </div>
-
-        <div class="preview-subtitle">
-          当前分组：
-          <span v-if="currentGroup">
-            <strong>{{ currentGroup.name }}</strong> ·
-            <strong>{{ activeNodeForCurrentGroup?.name || '未选择节点' }}</strong>
-          </span>
-          <span v-else class="text-muted">未选择分组</span>
-        </div>
-
-        <!-- Command Code Box -->
-        <div class="command-box">
-          <code>{{ previewCommand }}</code>
-        </div>
-
-        <!-- Big Black Copy Button -->
-        <button
-          class="btn-copy-command"
-          :class="{ copied: copiedTooltip }"
-          @click="handleCopyCommand"
-        >
-          <svg v-if="!copiedTooltip" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg>
-          <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-          <span>{{ copiedTooltip ? '已复制启动命令！' : '复制启动命令' }}</span>
-        </button>
-
-        <p class="footer-caption">
-          以上是交互概念原型，节点为示例数据；实际配置读写和终端启动由桌面程序实现。
-        </p>
-      </section>
-    </div>
-
-    <!-- ==================== VIEW 2: SETTINGS PAGE ==================== -->
-    <div v-else class="launcher-card settings-card">
-      <!-- HEADER -->
-      <header class="card-header">
-        <div class="header-title-box">
-          <div class="app-icon">
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-          </div>
-          <h1 class="app-title">Claude Launcher • 设置</h1>
-        </div>
-
-        <div class="header-badges">
-          <span class="badge-concept">概念界面</span>
-          <button class="btn-back-link" @click="currentView = 'main'" title="返回启动器主界面">
-            返回启动器
-          </button>
-        </div>
-      </header>
-
-      <!-- ALERT BANNER IN SETTINGS -->
-      <div v-if="statusBanner" class="status-toast" :class="statusBanner.type">
-        <span>{{ statusBanner.text }}</span>
-        <button class="toast-close" @click="statusBanner = null">×</button>
-      </div>
-
-      <!-- SECTION 1: OS PREVIEW SEGMENTED CONTROL -->
-      <section class="settings-group">
-        <label class="settings-label">操作系统预览</label>
-        <div class="os-segmented-control">
-          <button
-            class="os-segment"
-            :class="{ active: selectedOsPreview === 'macOS' }"
-            @click="selectedOsPreview = 'macOS'"
-          >
-            macOS
-          </button>
-          <button
-            class="os-segment"
-            :class="{ active: selectedOsPreview === 'Windows' }"
-            @click="selectedOsPreview = 'Windows'"
-          >
-            Windows
-          </button>
-        </div>
-      </section>
-
-      <!-- SECTION 2: CLAUDE CONFIG DIR -->
-      <section class="settings-group">
-        <label class="settings-label-strong">Claude 配置目录</label>
-
-        <!-- Radio Options -->
-        <div class="radio-options-column">
-          <label class="custom-radio-row">
-            <input
-              type="radio"
-              name="configDirMode"
-              value="auto"
-              :checked="preferences.configDirMode === 'auto'"
-              @change="setConfigDirMode('auto')"
-            />
-            <span class="radio-text">自动检测（推荐）</span>
-          </label>
-
-          <label class="custom-radio-row">
-            <input
-              type="radio"
-              name="configDirMode"
-              value="custom"
-              :checked="preferences.configDirMode === 'custom'"
-              @change="setConfigDirMode('custom')"
-            />
-            <span class="radio-text">自定义配置目录</span>
-            <button
-              v-if="preferences.configDirMode === 'custom'"
-              class="btn-select-dir"
-              @click="handleSelectCustomDir"
-            >
-              浏览选择
-            </button>
-          </label>
-        </div>
-
-        <!-- Directory Preview Callout Box -->
-        <div class="dir-preview-box">
-          <div class="dir-preview-header">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
-            </svg>
-            <span class="dir-header-title">当前配置目录示意</span>
-          </div>
-          <div class="dir-path-value" @click="handleOpenConfigDir" title="点击在系统资源管理器中打开">
-            {{ settingsDirDisplay }}
-          </div>
-          <div class="dir-path-note">
-            实际应用会显示解析后的绝对路径
-          </div>
-        </div>
-      </section>
-
-      <!-- SECTION 3: CONFIG FILES PREVIEW -->
-      <section class="settings-group">
-        <div class="section-divider-clean"></div>
-        <h2 class="settings-section-title">配置文件预览</h2>
-
-        <div class="files-preview-list">
-          <div
-            v-for="file in configFiles"
-            :key="file.name"
-            class="file-row-item"
-            @click="openFilePreview(file)"
-            title="点击查看此文件配置"
-          >
-            <!-- File Icon with {} -->
-            <div class="file-icon-wrap">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-                <polyline points="14 2 14 8 20 8"></polyline>
-                <line x1="16" y1="13" x2="8" y2="13"></line>
-                <line x1="16" y1="17" x2="8" y2="17"></line>
-                <line x1="10" y1="9" x2="8" y2="9"></line>
+      <!-- ==================== VIEW 2: SETTINGS PAGE ==================== -->
+      <template v-else>
+        <!-- HEADER -->
+        <header class="app-header">
+          <div class="header-left">
+            <div class="app-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
               </svg>
             </div>
-
-            <!-- File Name -->
-            <div class="file-name-text">
-              {{ file.name }}
-            </div>
-
-            <!-- Tag: 基础文件 / 分组文件 -->
-            <div class="file-tag-box">
-              <span
-                v-if="file.fileType === 'base'"
-                class="badge-file base"
-              >
-                基础文件
-              </span>
-              <span
-                v-else-if="file.fileType === 'group'"
-                class="badge-file group"
-              >
-                分组文件
-              </span>
-              <span
-                v-else
-                class="badge-file other"
-              >
-                配置文件
-              </span>
-            </div>
+            <h1 class="app-title">Claude Launcher • 设置</h1>
           </div>
+
+          <div class="header-right">
+            <span class="badge-concept">概念界面</span>
+            <button class="btn-nav-back" @click="currentView = 'main'" title="返回启动器主界面">
+              返回启动器
+            </button>
+          </div>
+        </header>
+
+        <!-- TOAST BANNER -->
+        <div v-if="statusBanner" class="status-toast" :class="statusBanner.type">
+          <span>{{ statusBanner.text }}</span>
+          <button class="toast-close" @click="statusBanner = null">×</button>
         </div>
-      </section>
+
+        <!-- SETTINGS SCROLLABLE BODY -->
+        <main class="settings-body">
+          <!-- OS PREVIEW -->
+          <section class="settings-card-item">
+            <div class="settings-sub-label">操作系统预览</div>
+            <div class="segmented-pill-wrap">
+              <button
+                class="segmented-btn"
+                :class="{ active: selectedOsPreview === 'macOS' }"
+                @click="selectedOsPreview = 'macOS'"
+              >
+                macOS
+              </button>
+              <button
+                class="segmented-btn"
+                :class="{ active: selectedOsPreview === 'Windows' }"
+                @click="selectedOsPreview = 'Windows'"
+              >
+                Windows
+              </button>
+            </div>
+          </section>
+
+          <!-- CONFIG DIRECTORY -->
+          <section class="settings-card-item">
+            <div class="settings-item-title">Claude 配置目录</div>
+
+            <div class="radio-vertical-list">
+              <label class="radio-field">
+                <input
+                  type="radio"
+                  name="configDirMode"
+                  value="auto"
+                  :checked="preferences.configDirMode === 'auto'"
+                  @change="setConfigDirMode('auto')"
+                />
+                <span class="radio-label-text">自动检测（推荐）</span>
+              </label>
+
+              <label class="radio-field">
+                <input
+                  type="radio"
+                  name="configDirMode"
+                  value="custom"
+                  :checked="preferences.configDirMode === 'custom'"
+                  @change="setConfigDirMode('custom')"
+                />
+                <span class="radio-label-text">自定义配置目录</span>
+                <button
+                  v-if="preferences.configDirMode === 'custom'"
+                  class="btn-browse-dir"
+                  @click="handleSelectCustomDir"
+                >
+                  浏览选择
+                </button>
+              </label>
+            </div>
+
+            <!-- Path Callout Box -->
+            <div class="dir-callout-card">
+              <div class="dir-callout-top">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg>
+                <span>当前配置目录示意</span>
+              </div>
+              <div class="dir-callout-path" @click="handleOpenConfigDir" title="点击在系统资源管理器中打开">
+                {{ settingsDirDisplay }}
+              </div>
+              <div class="dir-callout-footnote">
+                实际应用会显示解析后的绝对路径
+              </div>
+            </div>
+          </section>
+
+          <!-- CONFIG FILES PREVIEW -->
+          <section class="settings-card-item">
+            <div class="section-divider-line"></div>
+            <h2 class="settings-item-title">配置文件预览</h2>
+
+            <div class="files-preview-box">
+              <div
+                v-for="file in configFiles"
+                :key="file.name"
+                class="file-row"
+                @click="openFilePreview(file)"
+                title="点击查看配置内容"
+              >
+                <!-- File Icon with code symbol -->
+                <div class="file-icon-box">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                    <line x1="16" y1="13" x2="8" y2="13"></line>
+                    <line x1="16" y1="17" x2="8" y2="17"></line>
+                    <line x1="10" y1="9" x2="8" y2="9"></line>
+                  </svg>
+                </div>
+
+                <div class="file-name-col">
+                  {{ file.name }}
+                </div>
+
+                <div class="file-badge-col">
+                  <span v-if="file.fileType === 'base'" class="badge-tag-base">
+                    基础文件
+                  </span>
+                  <span v-else class="badge-tag-group">
+                    分组文件
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+        </main>
+      </template>
     </div>
 
     <!-- MODAL: CREATE GROUP -->
-    <div v-if="showCreateGroupModal" class="modal-backdrop" @click.self="showCreateGroupModal = false">
-      <div class="modal-card">
-        <div class="modal-header">
-          <h3 class="modal-title">新建模型分组</h3>
-          <button class="modal-close" @click="showCreateGroupModal = false">×</button>
+    <div v-if="showCreateGroupModal" class="modal-overlay" @click.self="showCreateGroupModal = false">
+      <div class="modal-box">
+        <div class="modal-head">
+          <h3 class="modal-head-title">新建模型分组</h3>
+          <button class="modal-head-close" @click="showCreateGroupModal = false">×</button>
         </div>
-        <div class="modal-body">
-          <div class="form-item">
-            <label class="form-label">分组展示名称</label>
+        <div class="modal-content">
+          <div class="input-field-group">
+            <label class="input-label">分组展示名称</label>
             <input
               type="text"
-              class="form-input"
+              class="styled-input"
               v-model="newGroupName"
               @input="onGroupNameChange"
               placeholder="例如：Opus 4.6 或 Gemini 3 Pro"
@@ -833,24 +818,24 @@ function openFilePreview(file: ConfigFileItem) {
             />
           </div>
 
-          <div class="form-item">
-            <label class="form-label">配置文件名标识 (Slug)</label>
-            <div class="slug-row">
-              <span class="slug-tag">my-</span>
+          <div class="input-field-group">
+            <label class="input-label">配置文件名标识 (Slug)</label>
+            <div class="slug-input-wrapper">
+              <span class="slug-affix">my-</span>
               <input
                 type="text"
-                class="form-input slug-input"
+                class="slug-core-input"
                 v-model="newGroupSlug"
                 placeholder="opus-4.6"
               />
-              <span class="slug-tag">.json</span>
+              <span class="slug-affix">.json</span>
             </div>
-            <span class="form-hint">将在 ~/.claude/ 下生成 my-{{ newGroupSlug || 'xxx' }}.json，绝不影响基础 settings.json</span>
+            <span class="input-helper-text">将在 ~/.claude/ 下生成 my-{{ newGroupSlug || 'xxx' }}.json，绝不影响基础 settings.json</span>
           </div>
 
-          <div class="form-item">
-            <label class="form-label">初始关联节点 (可选)</label>
-            <select class="form-input" v-model="newGroupInitialNodeId">
+          <div class="input-field-group">
+            <label class="input-label">初始关联节点 (可选)</label>
+            <select class="styled-input" v-model="newGroupInitialNodeId">
               <option value="">暂不关联</option>
               <option v-for="n in nodes" :key="n.id" :value="n.id">
                 {{ n.name }} ({{ n.baseUrl }})
@@ -858,143 +843,143 @@ function openFilePreview(file: ConfigFileItem) {
             </select>
           </div>
         </div>
-        <div class="modal-footer">
-          <button class="btn-cancel" @click="showCreateGroupModal = false">取消</button>
-          <button class="btn-confirm" @click="handleCreateGroup">确认创建</button>
+        <div class="modal-actions">
+          <button class="btn-modal-cancel" @click="showCreateGroupModal = false">取消</button>
+          <button class="btn-modal-confirm" @click="handleCreateGroup">确认创建</button>
         </div>
       </div>
     </div>
 
     <!-- MODAL: ADD / EDIT NODE -->
-    <div v-if="showNodeModal" class="modal-backdrop" @click.self="showNodeModal = false">
-      <div class="modal-card modal-wide">
-        <div class="modal-header">
-          <h3 class="modal-title">{{ editingNode.isNew ? '添加中转节点' : '编辑中转节点' }}</h3>
-          <button class="modal-close" @click="showNodeModal = false">×</button>
+    <div v-if="showNodeModal" class="modal-overlay" @click.self="showNodeModal = false">
+      <div class="modal-box modal-lg">
+        <div class="modal-head">
+          <h3 class="modal-head-title">{{ editingNode.isNew ? '添加中转节点' : '编辑中转节点' }}</h3>
+          <button class="modal-head-close" @click="showNodeModal = false">×</button>
         </div>
-        <div class="modal-body">
-          <div class="form-grid">
-            <div class="form-item">
-              <label class="form-label">中转站名称</label>
+        <div class="modal-content">
+          <div class="input-grid-2">
+            <div class="input-field-group">
+              <label class="input-label">中转站名称</label>
               <input
                 type="text"
-                class="form-input"
+                class="styled-input"
                 v-model="editingNode.node.name"
                 placeholder="例如：中转站 A"
               />
             </div>
-            <div class="form-item">
-              <label class="form-label">认证模式</label>
-              <select class="form-input" v-model="editingNode.node.authMode">
+            <div class="input-field-group">
+              <label class="input-label">认证模式</label>
+              <select class="styled-input" v-model="editingNode.node.authMode">
                 <option value="authToken">ANTHROPIC_AUTH_TOKEN (中转推荐)</option>
                 <option value="apiKey">ANTHROPIC_API_KEY (API Key)</option>
               </select>
             </div>
           </div>
 
-          <div class="form-item">
-            <label class="form-label">API Base URL</label>
+          <div class="input-field-group">
+            <label class="input-label">API Base URL</label>
             <input
               type="text"
-              class="form-input"
+              class="styled-input"
               v-model="editingNode.node.baseUrl"
               placeholder="例如：https://api-a.example.com"
             />
           </div>
 
-          <div class="form-item">
-            <label class="form-label">Token / 密钥</label>
-            <div class="password-wrap">
+          <div class="input-field-group">
+            <label class="input-label">Token / 密钥</label>
+            <div class="password-input-wrapper">
               <input
                 :type="showPassword ? 'text' : 'password'"
-                class="form-input"
+                class="styled-input"
                 v-model="editingNode.node.authToken"
                 placeholder="sk-..."
               />
-              <button class="toggle-eye" type="button" @click="showPassword = !showPassword">
+              <button class="btn-eye-toggle" type="button" @click="showPassword = !showPassword">
                 {{ showPassword ? '隐藏' : '显示' }}
               </button>
             </div>
           </div>
 
-          <div class="form-divider">
+          <div class="modal-divider-text">
             <span>模型映射 (覆盖默认模型)</span>
           </div>
 
-          <div class="form-grid">
-            <div class="form-item">
-              <label class="form-label">默认模型 (ANTHROPIC_MODEL)</label>
+          <div class="input-grid-2">
+            <div class="input-field-group">
+              <label class="input-label">默认模型 (ANTHROPIC_MODEL)</label>
               <input
                 type="text"
-                class="form-input"
+                class="styled-input"
                 v-model="editingNode.node.models.defaultModel"
                 placeholder="claude-3-7-sonnet-20250219"
               />
             </div>
-            <div class="form-item">
-              <label class="form-label">Opus 映射模型</label>
+            <div class="input-field-group">
+              <label class="input-label">Opus 映射模型</label>
               <input
                 type="text"
-                class="form-input"
+                class="styled-input"
                 v-model="editingNode.node.models.opus"
                 placeholder="claude-3-opus-20240229"
               />
             </div>
           </div>
 
-          <div class="form-grid">
-            <div class="form-item">
-              <label class="form-label">Sonnet 映射模型</label>
+          <div class="input-grid-2">
+            <div class="input-field-group">
+              <label class="input-label">Sonnet 映射模型</label>
               <input
                 type="text"
-                class="form-input"
+                class="styled-input"
                 v-model="editingNode.node.models.sonnet"
                 placeholder="claude-3-7-sonnet-20250219"
               />
             </div>
-            <div class="form-item">
-              <label class="form-label">Haiku 映射模型</label>
+            <div class="input-field-group">
+              <label class="input-label">Haiku 映射模型</label>
               <input
                 type="text"
-                class="form-input"
+                class="styled-input"
                 v-model="editingNode.node.models.haiku"
                 placeholder="claude-3-5-haiku-20241022"
               />
             </div>
           </div>
         </div>
-        <div class="modal-footer">
+        <div class="modal-actions">
           <button
             v-if="!editingNode.isNew"
-            class="btn-danger-link"
+            class="btn-delete-node"
             @click="handleDeleteNode(editingNode.node.id)"
           >
             删除此节点
           </button>
-          <div class="footer-right">
-            <button class="btn-cancel" @click="showNodeModal = false">取消</button>
-            <button class="btn-confirm" @click="handleSaveNode">保存节点</button>
+          <div class="actions-right">
+            <button class="btn-modal-cancel" @click="showNodeModal = false">取消</button>
+            <button class="btn-modal-confirm" @click="handleSaveNode">保存节点</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- MODAL: VIEW / EDIT JSON -->
-    <div v-if="showJsonModal" class="modal-backdrop" @click.self="showJsonModal = false">
-      <div class="modal-card modal-wide">
-        <div class="modal-header">
-          <h3 class="modal-title">查看配置 JSON ({{ currentEditingFilename }})</h3>
-          <button class="modal-close" @click="showJsonModal = false">×</button>
+    <div v-if="showJsonModal" class="modal-overlay" @click.self="showJsonModal = false">
+      <div class="modal-box modal-lg">
+        <div class="modal-head">
+          <h3 class="modal-head-title">查看配置 JSON ({{ currentEditingFilename }})</h3>
+          <button class="modal-head-close" @click="showJsonModal = false">×</button>
         </div>
-        <div class="modal-body">
-          <p class="form-hint" style="margin-bottom: 8px;">
+        <div class="modal-content">
+          <p class="input-helper-text" style="margin-bottom: 8px;">
             此文件独立保存在 Claude 配置目录，仅当前分组启动时通过 <code>--settings</code> 加载。
           </p>
-          <textarea class="json-textarea" v-model="currentJsonContent" rows="14"></textarea>
+          <textarea class="json-editor-area" v-model="currentJsonContent" rows="14"></textarea>
         </div>
-        <div class="modal-footer">
-          <button class="btn-cancel" @click="showJsonModal = false">取消</button>
-          <button class="btn-confirm" @click="handleSaveSettingsJson">保存</button>
+        <div class="modal-actions">
+          <button class="btn-modal-cancel" @click="showJsonModal = false">取消</button>
+          <button class="btn-modal-confirm" @click="handleSaveSettingsJson">保存</button>
         </div>
       </div>
     </div>
@@ -1002,52 +987,46 @@ function openFilePreview(file: ConfigFileItem) {
 </template>
 
 <style scoped>
-/* Reset & Layout */
-.window-wrapper {
-  min-height: 100vh;
-  width: 100vw;
-  background-color: #f8fafc;
+/* App Shell & Native Container */
+.app-shell {
+  width: 100%;
+  height: 100vh;
+  background-color: #ffffff;
+  overflow: hidden;
   display: flex;
   justify-content: center;
-  align-items: center;
-  padding: 24px 16px;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  color: #1e293b;
   box-sizing: border-box;
-  user-select: none;
 }
 
-/* Card Container */
-.launcher-card {
+.app-container {
   width: 100%;
-  max-width: 620px;
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 16px;
-  padding: 24px 28px;
-  box-shadow: 0 4px 25px -4px rgba(0, 0, 0, 0.05), 0 2px 10px -2px rgba(0, 0, 0, 0.02);
+  max-width: 600px;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  padding: 20px 24px 16px 24px;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 /* Header */
-.card-header {
+.app-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 4px;
+  padding-bottom: 14px;
+  flex-shrink: 0;
 }
 
-.header-title-box {
+.header-left {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
 .app-icon {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1062,13 +1041,13 @@ function openFilePreview(file: ConfigFileItem) {
   letter-spacing: -0.01em;
 }
 
-.header-badges {
+.header-right {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.status-badge.ready {
+.badge-ready {
   background: #e6f9ed;
   color: #16a34a;
   border: 1px solid #bbf7d0;
@@ -1087,12 +1066,12 @@ function openFilePreview(file: ConfigFileItem) {
   border-radius: 6px;
 }
 
-.settings-gear-btn {
+.icon-gear-btn {
   background: transparent;
   border: none;
   color: #94a3b8;
   cursor: pointer;
-  padding: 4px;
+  padding: 5px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1100,12 +1079,12 @@ function openFilePreview(file: ConfigFileItem) {
   transition: all 0.15s;
 }
 
-.settings-gear-btn:hover {
+.icon-gear-btn:hover {
   color: #0f172a;
   background: #f1f5f9;
 }
 
-.btn-back-link {
+.btn-nav-back {
   background: #f8fafc;
   border: 1px solid #cbd5e1;
   color: #334155;
@@ -1116,7 +1095,7 @@ function openFilePreview(file: ConfigFileItem) {
   cursor: pointer;
   transition: all 0.15s;
 }
-.btn-back-link:hover {
+.btn-nav-back:hover {
   background: #0f172a;
   color: #fff;
   border-color: #0f172a;
@@ -1124,12 +1103,14 @@ function openFilePreview(file: ConfigFileItem) {
 
 /* Toast */
 .status-toast {
-  padding: 8px 14px;
+  padding: 7px 12px;
   border-radius: 8px;
   font-size: 13px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 10px;
+  flex-shrink: 0;
 }
 .status-toast.success { background: #dcfce7; color: #15803d; }
 .status-toast.warning { background: #fef9c3; color: #a16207; }
@@ -1137,26 +1118,37 @@ function openFilePreview(file: ConfigFileItem) {
 .status-toast.info { background: #e0f2fe; color: #0369a1; }
 .toast-close { background: none; border: none; font-size: 16px; cursor: pointer; color: inherit; }
 
-/* SECTION 1: GROUP SELECTOR */
-.section-group {
+/* Main Scrollable Area */
+.main-content {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-right: 2px;
+}
+
+/* Block Section */
+.block-section {
   display: flex;
   flex-direction: column;
 }
 
-.label-row {
+.block-label-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 7px;
 }
 
-.section-label {
+.block-label {
   font-size: 13px;
   color: #64748b;
   font-weight: 500;
 }
 
-.group-delete-link {
+.btn-text-danger {
   background: none;
   border: none;
   color: #ef4444;
@@ -1164,7 +1156,7 @@ function openFilePreview(file: ConfigFileItem) {
   cursor: pointer;
   padding: 0;
 }
-.group-delete-link:hover {
+.btn-text-danger:hover {
   text-decoration: underline;
 }
 
@@ -1174,20 +1166,20 @@ function openFilePreview(file: ConfigFileItem) {
   align-items: center;
 }
 
-.custom-select-wrap {
+.select-container {
   flex: 1;
   position: relative;
   display: flex;
   align-items: center;
 }
 
-.group-select {
+.styled-select {
   width: 100%;
   appearance: none;
   background: #ffffff;
   border: 1px solid #cbd5e1;
   border-radius: 10px;
-  padding: 10px 36px 10px 14px;
+  padding: 9px 36px 9px 14px;
   font-size: 15px;
   font-weight: 500;
   color: #0f172a;
@@ -1196,30 +1188,30 @@ function openFilePreview(file: ConfigFileItem) {
   transition: border-color 0.15s;
 }
 
-.group-select:focus {
+.styled-select:focus {
   border-color: #0f172a;
 }
 
-.empty-select-placeholder {
+.select-empty-box {
   width: 100%;
   border: 1px dashed #cbd5e1;
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 9px 14px;
   font-size: 14px;
   color: #94a3b8;
   cursor: pointer;
 }
 
-.select-chevron {
+.chevron-icon {
   position: absolute;
   right: 14px;
   pointer-events: none;
   color: #64748b;
 }
 
-.add-group-btn {
-  width: 44px;
-  height: 44px;
+.btn-circle-add {
+  width: 42px;
+  height: 42px;
   border: 1px solid #cbd5e1;
   border-radius: 12px;
   background: #ffffff;
@@ -1232,88 +1224,84 @@ function openFilePreview(file: ConfigFileItem) {
   transition: all 0.15s;
 }
 
-.add-group-btn:hover {
+.btn-circle-add:hover {
   background: #f8fafc;
   border-color: #94a3b8;
   color: #0f172a;
 }
 
-.settings-file-text {
-  margin-top: 6px;
+.settings-filename-sub {
+  margin-top: 5px;
   font-size: 13px;
   color: #64748b;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-.clickable-file {
+.file-link {
   cursor: pointer;
 }
-.clickable-file:hover {
+.file-link:hover {
   text-decoration: underline;
   color: #0f172a;
 }
 
-.empty-file-hint {
+.file-link-disabled {
   color: #94a3b8;
 }
 
-/* SECTION 2: RELAY NODES */
-.section-nodes {
-  display: flex;
-  flex-direction: column;
-}
-
-.nodes-header-row {
+/* Middle Nodes Section */
+.block-header-row {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
-.nodes-title {
+.block-title {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
   color: #0f172a;
 }
 
-.nodes-desc {
+.block-sub {
   font-size: 12px;
   color: #64748b;
 }
 
-.nodes-container {
+.nodes-list-box {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
-.empty-nodes-box {
-  padding: 24px;
+.empty-state-card {
+  padding: 20px;
   border: 1px dashed #cbd5e1;
   border-radius: 12px;
   text-align: center;
   color: #64748b;
 }
 
-.empty-nodes-box p {
+.empty-title {
   margin: 0 0 4px 0;
   font-weight: 500;
   font-size: 14px;
   color: #334155;
 }
 
-.empty-sub {
+.empty-desc {
+  margin: 0;
   font-size: 12px;
   color: #94a3b8;
 }
 
-/* Node Card */
-.node-card {
+/* Node item card */
+.node-item-card {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 14px 18px;
+  padding: 12px 16px;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   background: #ffffff;
@@ -1321,23 +1309,23 @@ function openFilePreview(file: ConfigFileItem) {
   transition: all 0.15s;
 }
 
-.node-card:hover {
+.node-item-card:hover {
   border-color: #cbd5e1;
   background: #fafafa;
 }
 
-.node-card.active {
+.node-item-card.active {
   border: 1.5px solid #10b981;
   background: #ffffff;
 }
 
-.node-icon-box {
+.node-left-icon {
   margin-right: 14px;
   display: flex;
   align-items: center;
 }
 
-.check-circle {
+.radio-check-circle {
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -1348,45 +1336,39 @@ function openFilePreview(file: ConfigFileItem) {
   justify-content: center;
 }
 
-.empty-circle {
+.radio-empty-circle {
   width: 18px;
   height: 18px;
   border-radius: 50%;
   background: #94a3b8;
 }
 
-.node-content {
+.node-info-col {
   flex: 1;
 }
 
-.node-name-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.node-name {
+.node-title {
   font-size: 15px;
   font-weight: 600;
   color: #0f172a;
 }
 
-.node-url {
+.node-suburl {
   font-size: 13px;
   color: #64748b;
-  margin-top: 2px;
+  margin-top: 1px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-.node-meta-box {
+.node-meta-col {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 4px;
+  gap: 3px;
   margin-left: 12px;
 }
 
-.badge-current {
+.badge-active-node {
   background: #dcfce7;
   color: #15803d;
   font-size: 11px;
@@ -1395,34 +1377,34 @@ function openFilePreview(file: ConfigFileItem) {
   border-radius: 6px;
 }
 
-.btn-switch-text {
+.text-switch {
   font-size: 13px;
   color: #64748b;
 }
 
-.node-card:hover .btn-switch-text {
+.node-item-card:hover .text-switch {
   color: #0f172a;
 }
 
-.latency-ms {
+.speed-ms {
   font-size: 13px;
   color: #64748b;
 }
 
-.latency-testing {
+.speed-testing {
   font-size: 12px;
   color: #3b82f6;
 }
 
-.latency-empty {
+.speed-none {
   font-size: 13px;
   color: #94a3b8;
 }
 
-.node-edit-icon {
+.btn-card-edit {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 8px;
+  right: 8px;
   background: transparent;
   border: none;
   color: #cbd5e1;
@@ -1432,23 +1414,23 @@ function openFilePreview(file: ConfigFileItem) {
   display: none;
 }
 
-.node-card:hover .node-edit-icon {
+.node-item-card:hover .btn-card-edit {
   display: block;
 }
 
-.node-edit-icon:hover {
+.btn-card-edit:hover {
   color: #0f172a;
   background: #f1f5f9;
 }
 
-/* Action Buttons below Nodes */
-.nodes-action-row {
+/* Action Pill Buttons below nodes */
+.nodes-pill-row {
   display: flex;
   gap: 12px;
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
-.pill-btn {
+.btn-pill {
   flex: 1;
   border: 1px solid #cbd5e1;
   border-radius: 9999px;
@@ -1456,7 +1438,7 @@ function openFilePreview(file: ConfigFileItem) {
   color: #334155;
   font-size: 13px;
   font-weight: 500;
-  padding: 10px 16px;
+  padding: 9px 16px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1465,43 +1447,43 @@ function openFilePreview(file: ConfigFileItem) {
   transition: all 0.15s;
 }
 
-.pill-btn:hover:not(:disabled) {
+.btn-pill:hover:not(:disabled) {
   border-color: #94a3b8;
   background: #f8fafc;
   color: #0f172a;
 }
 
-.pill-btn:disabled {
+.btn-pill:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.btn-icon {
+.plus-icon {
   font-size: 16px;
 }
 
 /* SECTION 3: LAUNCH CONFIG PREVIEW */
-.section-preview {
+.preview-section {
   border-top: 1px solid #f1f5f9;
-  padding-top: 20px;
+  padding-top: 16px;
   display: flex;
   flex-direction: column;
 }
 
-.preview-header-row {
+.preview-top-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
 
-.preview-title {
+.preview-heading {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
   color: #0f172a;
 }
 
-.badge-session {
+.badge-pill-gray {
   background: #f1f5f9;
   color: #475569;
   font-size: 11px;
@@ -1510,22 +1492,22 @@ function openFilePreview(file: ConfigFileItem) {
   border-radius: 6px;
 }
 
-.preview-subtitle {
+.preview-group-desc {
   font-size: 13px;
   color: #475569;
-  margin-top: 4px;
+  margin-top: 3px;
 }
 
-.preview-subtitle strong {
+.preview-group-desc strong {
   color: #0f172a;
 }
 
-.text-muted {
+.text-gray-light {
   color: #94a3b8;
 }
 
-.command-box {
-  margin: 16px 0 14px 0;
+.code-box-line {
+  margin: 14px 0 12px 0;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
   color: #475569;
@@ -1533,13 +1515,13 @@ function openFilePreview(file: ConfigFileItem) {
   word-break: break-all;
 }
 
-.btn-copy-command {
+.btn-black-pill {
   width: 100%;
   background: #0f172a;
   color: #ffffff;
   border: none;
   border-radius: 9999px;
-  padding: 13px 20px;
+  padding: 12px 20px;
   font-size: 14px;
   font-weight: 500;
   display: flex;
@@ -1550,47 +1532,53 @@ function openFilePreview(file: ConfigFileItem) {
   transition: all 0.2s;
 }
 
-.btn-copy-command:hover {
+.btn-black-pill:hover {
   background: #1e293b;
 }
 
-.btn-copy-command.copied {
+.btn-black-pill.copied {
   background: #16a34a;
 }
 
-.footer-caption {
+.bottom-disclaimer {
   font-size: 12px;
   color: #94a3b8;
   text-align: center;
-  margin: 14px 0 0 0;
-  line-height: 1.5;
+  margin: 12px 0 0 0;
+  line-height: 1.4;
 }
 
 /* ==================== SETTINGS PAGE STYLES ==================== */
-.settings-card {
-  gap: 22px;
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding-right: 2px;
 }
 
-.settings-group {
+.settings-card-item {
   display: flex;
   flex-direction: column;
 }
 
-.settings-label {
+.settings-sub-label {
   font-size: 13px;
   color: #64748b;
-  margin-bottom: 8px;
+  margin-bottom: 7px;
 }
 
-.settings-label-strong {
+.settings-item-title {
   font-size: 14px;
   font-weight: 600;
   color: #0f172a;
-  margin-bottom: 10px;
+  margin: 0 0 9px 0;
 }
 
-/* OS Segmented Control */
-.os-segmented-control {
+/* Segmented Control */
+.segmented-pill-wrap {
   display: flex;
   background: #f1f5f9;
   padding: 3px;
@@ -1598,9 +1586,9 @@ function openFilePreview(file: ConfigFileItem) {
   gap: 2px;
 }
 
-.os-segment {
+.segmented-btn {
   flex: 1;
-  padding: 8px 16px;
+  padding: 7px 16px;
   border-radius: 9999px;
   border: none;
   background: transparent;
@@ -1611,64 +1599,64 @@ function openFilePreview(file: ConfigFileItem) {
   transition: all 0.15s;
 }
 
-.os-segment.active {
+.segmented-btn.active {
   background: #ffffff;
   color: #0f172a;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 
-/* Radio Options Column */
-.radio-options-column {
+/* Radios */
+.radio-vertical-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 14px;
+  gap: 10px;
+  margin-bottom: 12px;
 }
 
-.custom-radio-row {
+.radio-field {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
   cursor: pointer;
 }
 
-.custom-radio-row input[type="radio"] {
+.radio-field input[type="radio"] {
   accent-color: #0f172a;
   width: 16px;
   height: 16px;
   cursor: pointer;
 }
 
-.radio-text {
+.radio-label-text {
   font-size: 14px;
   color: #1e293b;
   font-weight: 500;
 }
 
-.btn-select-dir {
+.btn-browse-dir {
   margin-left: auto;
   border: 1px solid #cbd5e1;
   background: #ffffff;
   color: #334155;
   font-size: 12px;
-  padding: 4px 10px;
+  padding: 3px 9px;
   border-radius: 6px;
   cursor: pointer;
 }
-.btn-select-dir:hover {
+.btn-browse-dir:hover {
   background: #f8fafc;
   color: #0f172a;
 }
 
-/* Dir Preview Box */
-.dir-preview-box {
+/* Dir Callout Card */
+.dir-callout-card {
   background: #f8fafc;
   border: 1px solid #f1f5f9;
   border-radius: 10px;
   padding: 12px 14px;
 }
 
-.dir-preview-header {
+.dir-callout-top {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1678,93 +1666,92 @@ function openFilePreview(file: ConfigFileItem) {
   margin-bottom: 4px;
 }
 
-.dir-path-value {
+.dir-callout-path {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 13px;
   color: #0f172a;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   cursor: pointer;
   word-break: break-all;
 }
-.dir-path-value:hover {
+.dir-callout-path:hover {
   text-decoration: underline;
 }
 
-.dir-path-note {
+.dir-callout-footnote {
   font-size: 11px;
   color: #94a3b8;
 }
 
-.section-divider-clean {
+.section-divider-line {
   border-top: 1px solid #f1f5f9;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
-.settings-section-title {
-  margin: 0 0 12px 0;
-  font-size: 15px;
-  font-weight: 700;
-  color: #0f172a;
-}
-
-/* File Preview List */
-.files-preview-list {
+/* Files Preview List */
+.files-preview-box {
   border: 1px solid #e2e8f0;
   border-radius: 12px;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 240px;
   background: #ffffff;
 }
 
-.file-row-item {
+.file-row {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
+  padding: 11px 16px;
   border-bottom: 1px solid #f1f5f9;
   cursor: pointer;
   transition: background 0.15s;
 }
-.file-row-item:last-child {
+.file-row:last-child {
   border-bottom: none;
 }
-.file-row-item:hover {
+.file-row:hover {
   background: #f8fafc;
 }
 
-.file-icon-wrap {
+.file-icon-box {
   margin-right: 12px;
   color: #64748b;
   display: flex;
   align-items: center;
 }
 
-.file-name-text {
+.file-name-col {
   flex: 1;
   font-size: 14px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   color: #1e293b;
 }
 
-.badge-file {
+.file-badge-col {
+  display: flex;
+  align-items: center;
+}
+
+.badge-tag-base {
+  background: #f1f5f9;
+  color: #475569;
   font-size: 11px;
   font-weight: 500;
   padding: 3px 8px;
   border-radius: 6px;
 }
-.badge-file.base {
-  background: #f1f5f9;
-  color: #475569;
-}
-.badge-file.group {
+
+.badge-tag-group {
   background: #e6f9ed;
   color: #16a34a;
-}
-.badge-file.other {
-  background: #e0f2fe;
-  color: #0369a1;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
 }
 
 /* MODALS */
-.modal-backdrop {
+.modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -1778,7 +1765,7 @@ function openFilePreview(file: ConfigFileItem) {
   z-index: 1000;
 }
 
-.modal-card {
+.modal-box {
   background: #ffffff;
   border-radius: 14px;
   width: 440px;
@@ -1788,26 +1775,26 @@ function openFilePreview(file: ConfigFileItem) {
   flex-direction: column;
 }
 
-.modal-wide {
-  width: 540px;
+.modal-lg {
+  width: 520px;
 }
 
-.modal-header {
+.modal-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 20px;
+  padding: 14px 18px;
   border-bottom: 1px solid #f1f5f9;
 }
 
-.modal-title {
+.modal-head-title {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
   color: #0f172a;
 }
 
-.modal-close {
+.modal-head-close {
   background: none;
   border: none;
   font-size: 20px;
@@ -1815,28 +1802,28 @@ function openFilePreview(file: ConfigFileItem) {
   cursor: pointer;
 }
 
-.modal-body {
-  padding: 20px;
+.modal-content {
+  padding: 18px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 13px;
   max-height: 70vh;
   overflow-y: auto;
 }
 
-.form-item {
+.input-field-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 5px;
 }
 
-.form-label {
+.input-label {
   font-size: 13px;
   font-weight: 500;
   color: #334155;
 }
 
-.form-input {
+.styled-input {
   width: 100%;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -1847,11 +1834,11 @@ function openFilePreview(file: ConfigFileItem) {
   box-sizing: border-box;
 }
 
-.form-input:focus {
+.styled-input:focus {
   border-color: #0f172a;
 }
 
-.slug-row {
+.slug-input-wrapper {
   display: flex;
   align-items: center;
   border: 1px solid #cbd5e1;
@@ -1859,7 +1846,7 @@ function openFilePreview(file: ConfigFileItem) {
   overflow: hidden;
 }
 
-.slug-tag {
+.slug-affix {
   background: #f8fafc;
   padding: 8px 10px;
   color: #64748b;
@@ -1867,37 +1854,38 @@ function openFilePreview(file: ConfigFileItem) {
   font-family: monospace;
 }
 
-.slug-input {
+.slug-core-input {
   border: none;
   padding: 8px;
   font-family: monospace;
   font-size: 14px;
+  flex: 1;
 }
 
-.slug-input:focus {
+.slug-core-input:focus {
   outline: none;
 }
 
-.form-hint {
+.input-helper-text {
   font-size: 11px;
   color: #64748b;
 }
 
-.form-grid {
+.input-grid-2 {
   display: flex;
   gap: 12px;
 }
-.form-grid .form-item {
+.input-grid-2 .input-field-group {
   flex: 1;
 }
 
-.password-wrap {
+.password-input-wrapper {
   position: relative;
   display: flex;
   align-items: center;
 }
 
-.toggle-eye {
+.btn-eye-toggle {
   position: absolute;
   right: 10px;
   background: none;
@@ -1907,20 +1895,20 @@ function openFilePreview(file: ConfigFileItem) {
   cursor: pointer;
 }
 
-.form-divider {
+.modal-divider-text {
   border-bottom: 1px solid #f1f5f9;
   line-height: 0.1em;
-  margin: 10px 0;
+  margin: 8px 0;
   text-align: center;
 }
-.form-divider span {
+.modal-divider-text span {
   background: #fff;
   padding: 0 10px;
   color: #94a3b8;
   font-size: 12px;
 }
 
-.json-textarea {
+.json-editor-area {
   width: 100%;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -1930,42 +1918,42 @@ function openFilePreview(file: ConfigFileItem) {
   box-sizing: border-box;
 }
 
-.modal-footer {
+.modal-actions {
   display: flex;
   justify-content: flex-end;
   align-items: center;
   gap: 10px;
-  padding: 14px 20px;
+  padding: 12px 18px;
   border-top: 1px solid #f1f5f9;
 }
 
-.footer-right {
+.actions-right {
   display: flex;
   gap: 10px;
 }
 
-.btn-cancel {
+.btn-modal-cancel {
   border: 1px solid #cbd5e1;
   background: #ffffff;
   color: #475569;
-  padding: 7px 14px;
+  padding: 6px 14px;
   border-radius: 8px;
   font-size: 13px;
   cursor: pointer;
 }
 
-.btn-confirm {
+.btn-modal-confirm {
   border: none;
   background: #0f172a;
   color: #ffffff;
-  padding: 7px 16px;
+  padding: 6px 16px;
   border-radius: 8px;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
 }
 
-.btn-danger-link {
+.btn-delete-node {
   margin-right: auto;
   background: none;
   border: none;
