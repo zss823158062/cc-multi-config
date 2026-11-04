@@ -1,0 +1,79 @@
+name: Build CC Multi-Config
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Setup pnpm
+      uses: pnpm/action-setup@v3
+      with:
+        version: 9
+
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+
+    - name: Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: './src-tauri -> target'
+
+    - name: Install frontend dependencies
+      run: pnpm install
+
+    - name: Run Rust tests
+      run: cargo test --manifest-path src-tauri/Cargo.toml
+
+    - name: Build Tauri app
+      run: pnpm tauri build
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: cc-multi-config-windows-x64
+        path: |
+          src-tauri/target/release/cc-multi-config.exe
+          src-tauri/target/release/bundle/nsis/*.exe
+
+    - name: Package release assets
+      if: startsWith(github.ref, 'refs/tags/v')
+      shell: pwsh
+      run: |
+        # 1. 压缩免安装便携版 exe 为 zip
+        Compress-Archive -Path src-tauri/target/release/cc-multi-config.exe -DestinationPath "cc-multi-config-${{ github.ref_name }}-windows-x64-portable.zip"
+        
+        # 2. 复制重命名 NSIS 安装包
+        $installer = Get-Item src-tauri/target/release/bundle/nsis/*.exe | Select-Object -First 1
+        if ($installer) {
+          Copy-Item $installer.FullName -Destination "cc-multi-config-${{ github.ref_name }}-windows-x64-setup.exe"
+        }
+
+    - name: Create GitHub Release
+      if: startsWith(github.ref, 'refs/tags/v')
+      uses: softprops/action-gh-release@v2
+      with:
+        files: |
+          cc-multi-config-${{ github.ref_name }}-windows-x64-portable.zip
+          cc-multi-config-${{ github.ref_name }}-windows-x64-setup.exe
+        generate_release_notes: true
