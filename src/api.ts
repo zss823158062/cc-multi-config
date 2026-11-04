@@ -71,4 +71,7 @@ export const api = {
 
   launchClaude: (groupId: string, projectDir: string, terminalOverride?: string) =>
     invoke<LaunchResult>('launch_claude', { groupId, projectDir, terminalOverride }),
+
+  listConfigFiles: () =>
+    invoke<import('./types').ConfigFileItem[]>('list_config_files'),
 };

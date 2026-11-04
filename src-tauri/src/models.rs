@@ -165,3 +165,13 @@ pub struct LaunchResult {
     pub terminal_used: String,
     pub command: String,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigFileItem {
+    pub name: String,
+    pub file_type: String, // "base" | "group" | "other"
+    pub path: String,
+    pub exists: bool,
+    pub size_bytes: u64,
+}

@@ -3,7 +3,7 @@ use std::process::Command;
 use crate::models::{
     Group, RelayNode, Preferences, ConfigDirInfo, BaseSettingsStatus,
     ClaudeBinaryInfo, TerminalInfo, NodeTestResult, SettingsDiffResult,
-    BackupItem, LaunchResult
+    BackupItem, LaunchResult, ConfigFileItem
 };
 use crate::store;
 use crate::paths::{resolve_claude_config_dir, get_safe_group_file_path};
@@ -285,4 +285,50 @@ pub fn launch_claude(
         &proj_path,
         &term_choice,
     )
+}
+
+#[tauri::command]
+pub fn list_config_files() -> Result<Vec<ConfigFileItem>, String> {
+    let config = store::load_launcher_config();
+    let (claude_dir, _) = resolve_claude_config_dir(&config.preferences);
+    let mut items = Vec::new();
+
+    // 1. Base settings.json
+    let base_file = claude_dir.join("settings.json");
+    let base_exists = base_file.exists();
+    items.push(ConfigFileItem {
+        name: "settings.json".to_string(),
+        file_type: "base".to_string(),
+        path: base_file.to_string_lossy().to_string(),
+        exists: base_exists,
+        size_bytes: if base_exists { base_file.metadata().map(|m| m.len()).unwrap_or(0) } else { 0 },
+    });
+
+    // 2. Scan dir for group files and other json files
+    if let Ok(entries) = std::fs::read_dir(&claude_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if let Some(file_name) = path.file_name().and_then(|n| n.to_str()) {
+                if file_name == "settings.json" {
+                    continue;
+                }
+                if file_name.ends_with(".json") {
+                    let file_type = if file_name.starts_with("my-") {
+                        "group".to_string()
+                    } else {
+                        "other".to_string()
+                    };
+                    items.push(ConfigFileItem {
+                        name: file_name.to_string(),
+                        file_type,
+                        path: path.to_string_lossy().to_string(),
+                        exists: true,
+                        size_bytes: entry.metadata().map(|m| m.len()).unwrap_or(0),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(items)
 }

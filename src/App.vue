@@ -4,17 +4,34 @@ import { api } from './api';
 import type {
   Group,
   RelayNode,
+  Preferences,
   ConfigDirInfo,
   ClaudeBinaryInfo,
   NodeTestResult,
+  ConfigFileItem,
 } from './types';
+
+// Navigation View: 'main' | 'settings'
+const currentView = ref<'main' | 'settings'>('main');
 
 // State
 const configDirInfo = ref<ConfigDirInfo | null>(null);
 const claudeBinary = ref<ClaudeBinaryInfo | null>(null);
+const preferences = ref<Preferences>({
+  configDirMode: 'auto',
+  customClaudeConfigDir: null,
+  terminal: 'system',
+  claudeExecutablePath: null,
+  lastProjectDir: null,
+});
 const groups = ref<Group[]>([]);
 const nodes = ref<RelayNode[]>([]);
 const currentGroupId = ref<string>('');
+const configFiles = ref<ConfigFileItem[]>([]);
+
+// Settings view specific state
+const selectedOsPreview = ref<'macOS' | 'Windows'>('macOS');
+const customDirInput = ref('');
 
 // Testing State
 const nodeTestingState = ref<Record<string, { testing: boolean; result?: NodeTestResult }>>({});
@@ -56,6 +73,7 @@ const editingNode = ref<{
 });
 const showPassword = ref(false);
 const currentJsonContent = ref('');
+const currentEditingFilename = ref('');
 
 // Computed
 const currentGroup = computed(() => {
@@ -81,6 +99,19 @@ const previewCommand = computed(() => {
   return `claude --settings ${displaySettingsPath.value}`;
 });
 
+// Settings page directory preview path based on selected OS preview
+const settingsDirDisplay = computed(() => {
+  if (preferences.value.configDirMode === 'custom' && customDirInput.value.trim()) {
+    return customDirInput.value.trim();
+  }
+  if (selectedOsPreview.value === 'macOS') {
+    return '~/.claude/';
+  } else {
+    // Windows default representation
+    return configDirInfo.value?.resolvedPath || '%USERPROFILE%\\.claude\\';
+  }
+});
+
 function notify(text: string, type: 'success' | 'warning' | 'error' | 'info' = 'info', ms = 3500) {
   statusBanner.value = { text, type };
   if (ms > 0) {
@@ -98,17 +129,27 @@ onMounted(async () => {
 
 async function loadData() {
   try {
-    const [cfg, allNodes, dirInfo, binaryInfo] = await Promise.all([
+    const [cfg, allNodes, dirInfo, binaryInfo, files] = await Promise.all([
       api.getLauncherConfig(),
       api.getNodes(),
       api.getClaudeConfigDirInfo(),
       api.detectClaudeBinary(),
+      api.listConfigFiles().catch(() => []),
     ]);
 
     groups.value = cfg.groups || [];
     nodes.value = allNodes || [];
+    preferences.value = cfg.preferences || {
+      configDirMode: 'auto',
+      customClaudeConfigDir: null,
+      terminal: 'system',
+      claudeExecutablePath: null,
+      lastProjectDir: null,
+    };
+    customDirInput.value = cfg.preferences?.customClaudeConfigDir || '';
     configDirInfo.value = dirInfo;
     claudeBinary.value = binaryInfo;
+    configFiles.value = files || [];
 
     if (groups.value.length > 0) {
       if (!currentGroupId.value || !groups.value.some((g) => g.id === currentGroupId.value)) {
@@ -153,6 +194,8 @@ async function handleCreateGroup() {
     currentGroupId.value = newGroup.id;
     showCreateGroupModal.value = false;
     notify(`已创建分组「${newGroup.name}」(${newGroup.settingsFile})`, 'success');
+    // Refresh config files list
+    configFiles.value = await api.listConfigFiles().catch(() => []);
   } catch (err: any) {
     notify(`创建分组失败: ${err}`, 'error', 5000);
   }
@@ -168,6 +211,7 @@ async function handleDeleteCurrentGroup() {
     await api.deleteGroup(gid, true);
     groups.value = groups.value.filter((g) => g.id !== gid);
     currentGroupId.value = groups.value[0]?.id || '';
+    configFiles.value = await api.listConfigFiles().catch(() => []);
     notify('分组已删除', 'info');
   } catch (err: any) {
     notify(`删除失败: ${err}`, 'error');
@@ -233,7 +277,6 @@ async function handleSaveNode() {
       nodes.value[idx] = saved;
     } else {
       nodes.value.push(saved);
-      // If current group has no active node, automatically select this new one
       if (currentGroup.value && !currentGroup.value.activeNodeId) {
         await handleSwitchNode(saved.id);
       }
@@ -301,7 +344,6 @@ async function handleCopyCommand() {
       copiedTooltip.value = false;
     }, 2000);
   } catch {
-    // Fallback
     const textarea = document.createElement('textarea');
     textarea.value = cmd;
     document.body.appendChild(textarea);
@@ -331,6 +373,7 @@ async function handleViewSettingsJson() {
   try {
     const content = await api.getGroupSettingsContent(currentGroup.value.id);
     currentJsonContent.value = content;
+    currentEditingFilename.value = currentGroup.value.settingsFile;
     showJsonModal.value = true;
   } catch (err: any) {
     notify(`读取设置失败: ${err}`, 'error');
@@ -347,12 +390,56 @@ async function handleSaveSettingsJson() {
     notify(`保存失败: ${err}`, 'error');
   }
 }
+
+// Settings Page Actions
+async function handleSelectCustomDir() {
+  try {
+    const selected = await api.selectFolder(customDirInput.value || undefined);
+    if (selected) {
+      customDirInput.value = selected;
+      preferences.value.customClaudeConfigDir = selected;
+      preferences.value.configDirMode = 'custom';
+      await api.savePreferences(preferences.value);
+      configDirInfo.value = await api.getClaudeConfigDirInfo();
+      configFiles.value = await api.listConfigFiles().catch(() => []);
+      notify('已更新自定义配置目录', 'success');
+    }
+  } catch (err: any) {
+    notify(`选择目录失败: ${err}`, 'error');
+  }
+}
+
+async function setConfigDirMode(mode: 'auto' | 'custom') {
+  preferences.value.configDirMode = mode;
+  if (mode === 'custom' && !preferences.value.customClaudeConfigDir) {
+    await handleSelectCustomDir();
+  } else {
+    await api.savePreferences(preferences.value);
+    configDirInfo.value = await api.getClaudeConfigDirInfo();
+    configFiles.value = await api.listConfigFiles().catch(() => []);
+    notify(mode === 'auto' ? '已切换至自动检测' : '已切换至自定义配置目录', 'info');
+  }
+}
+
+function openFilePreview(file: ConfigFileItem) {
+  // If it's a group file, we can open in JSON viewer
+  const group = groups.value.find((g) => g.settingsFile === file.name);
+  if (group) {
+    currentGroupId.value = group.id;
+    handleViewSettingsJson();
+  } else {
+    // Open in Explorer or default editor
+    api.openFileInEditor(file.path).catch(() => {
+      api.openInExplorer(file.path);
+    });
+  }
+}
 </script>
 
 <template>
   <div class="window-wrapper">
-    <!-- MAIN APPLICATION CONTAINER -->
-    <div class="launcher-card">
+    <!-- ==================== VIEW 1: MAIN LAUNCHER ==================== -->
+    <div v-if="currentView === 'main'" class="launcher-card">
       <!-- HEADER -->
       <header class="card-header">
         <div class="header-title-box">
@@ -368,9 +455,10 @@ async function handleSaveSettingsJson() {
 
         <div class="header-badges">
           <span class="status-badge ready" title="基础配置目录正常">配置就绪</span>
-          <button class="settings-gear-btn" @click="handleOpenConfigDir" title="在系统资源管理器中打开配置目录">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          <button class="settings-gear-btn" @click="currentView = 'settings'" title="进入启动器设置页面">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
             </svg>
           </button>
         </div>
@@ -479,7 +567,6 @@ async function handleSaveSettingsJson() {
 
             <!-- Right Status / Actions -->
             <div class="node-meta-box">
-              <!-- Top tag or switch button -->
               <div class="meta-top">
                 <span v-if="currentGroup?.activeNodeId === node.id" class="badge-current">
                   当前节点
@@ -487,7 +574,6 @@ async function handleSaveSettingsJson() {
                 <span v-else class="btn-switch-text">切换</span>
               </div>
 
-              <!-- Bottom latency / test state -->
               <div class="meta-bottom">
                 <span v-if="nodeTestingState[node.id]?.testing" class="latency-testing">测速中...</span>
                 <span v-else-if="nodeTestingState[node.id]?.result?.latencyMs !== undefined" class="latency-ms">
@@ -567,6 +653,163 @@ async function handleSaveSettingsJson() {
         <p class="footer-caption">
           以上是交互概念原型，节点为示例数据；实际配置读写和终端启动由桌面程序实现。
         </p>
+      </section>
+    </div>
+
+    <!-- ==================== VIEW 2: SETTINGS PAGE ==================== -->
+    <div v-else class="launcher-card settings-card">
+      <!-- HEADER -->
+      <header class="card-header">
+        <div class="header-title-box">
+          <div class="app-icon">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+          </div>
+          <h1 class="app-title">Claude Launcher • 设置</h1>
+        </div>
+
+        <div class="header-badges">
+          <span class="badge-concept">概念界面</span>
+          <button class="btn-back-link" @click="currentView = 'main'" title="返回启动器主界面">
+            返回启动器
+          </button>
+        </div>
+      </header>
+
+      <!-- ALERT BANNER IN SETTINGS -->
+      <div v-if="statusBanner" class="status-toast" :class="statusBanner.type">
+        <span>{{ statusBanner.text }}</span>
+        <button class="toast-close" @click="statusBanner = null">×</button>
+      </div>
+
+      <!-- SECTION 1: OS PREVIEW SEGMENTED CONTROL -->
+      <section class="settings-group">
+        <label class="settings-label">操作系统预览</label>
+        <div class="os-segmented-control">
+          <button
+            class="os-segment"
+            :class="{ active: selectedOsPreview === 'macOS' }"
+            @click="selectedOsPreview = 'macOS'"
+          >
+            macOS
+          </button>
+          <button
+            class="os-segment"
+            :class="{ active: selectedOsPreview === 'Windows' }"
+            @click="selectedOsPreview = 'Windows'"
+          >
+            Windows
+          </button>
+        </div>
+      </section>
+
+      <!-- SECTION 2: CLAUDE CONFIG DIR -->
+      <section class="settings-group">
+        <label class="settings-label-strong">Claude 配置目录</label>
+
+        <!-- Radio Options -->
+        <div class="radio-options-column">
+          <label class="custom-radio-row">
+            <input
+              type="radio"
+              name="configDirMode"
+              value="auto"
+              :checked="preferences.configDirMode === 'auto'"
+              @change="setConfigDirMode('auto')"
+            />
+            <span class="radio-text">自动检测（推荐）</span>
+          </label>
+
+          <label class="custom-radio-row">
+            <input
+              type="radio"
+              name="configDirMode"
+              value="custom"
+              :checked="preferences.configDirMode === 'custom'"
+              @change="setConfigDirMode('custom')"
+            />
+            <span class="radio-text">自定义配置目录</span>
+            <button
+              v-if="preferences.configDirMode === 'custom'"
+              class="btn-select-dir"
+              @click="handleSelectCustomDir"
+            >
+              浏览选择
+            </button>
+          </label>
+        </div>
+
+        <!-- Directory Preview Callout Box -->
+        <div class="dir-preview-box">
+          <div class="dir-preview-header">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+            </svg>
+            <span class="dir-header-title">当前配置目录示意</span>
+          </div>
+          <div class="dir-path-value" @click="handleOpenConfigDir" title="点击在系统资源管理器中打开">
+            {{ settingsDirDisplay }}
+          </div>
+          <div class="dir-path-note">
+            实际应用会显示解析后的绝对路径
+          </div>
+        </div>
+      </section>
+
+      <!-- SECTION 3: CONFIG FILES PREVIEW -->
+      <section class="settings-group">
+        <div class="section-divider-clean"></div>
+        <h2 class="settings-section-title">配置文件预览</h2>
+
+        <div class="files-preview-list">
+          <div
+            v-for="file in configFiles"
+            :key="file.name"
+            class="file-row-item"
+            @click="openFilePreview(file)"
+            title="点击查看此文件配置"
+          >
+            <!-- File Icon with {} -->
+            <div class="file-icon-wrap">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <polyline points="14 2 14 8 20 8"></polyline>
+                <line x1="16" y1="13" x2="8" y2="13"></line>
+                <line x1="16" y1="17" x2="8" y2="17"></line>
+                <line x1="10" y1="9" x2="8" y2="9"></line>
+              </svg>
+            </div>
+
+            <!-- File Name -->
+            <div class="file-name-text">
+              {{ file.name }}
+            </div>
+
+            <!-- Tag: 基础文件 / 分组文件 -->
+            <div class="file-tag-box">
+              <span
+                v-if="file.fileType === 'base'"
+                class="badge-file base"
+              >
+                基础文件
+              </span>
+              <span
+                v-else-if="file.fileType === 'group'"
+                class="badge-file group"
+              >
+                分组文件
+              </span>
+              <span
+                v-else
+                class="badge-file other"
+              >
+                配置文件
+              </span>
+            </div>
+          </div>
+        </div>
       </section>
     </div>
 
@@ -740,7 +983,7 @@ async function handleSaveSettingsJson() {
     <div v-if="showJsonModal" class="modal-backdrop" @click.self="showJsonModal = false">
       <div class="modal-card modal-wide">
         <div class="modal-header">
-          <h3 class="modal-title">查看配置 JSON ({{ currentGroup?.settingsFile }})</h3>
+          <h3 class="modal-title">查看配置 JSON ({{ currentEditingFilename }})</h3>
           <button class="modal-close" @click="showJsonModal = false">×</button>
         </div>
         <div class="modal-body">
@@ -763,7 +1006,7 @@ async function handleSaveSettingsJson() {
 .window-wrapper {
   min-height: 100vh;
   width: 100vw;
-  background-color: #f1f5f9;
+  background-color: #f8fafc;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -835,6 +1078,15 @@ async function handleSaveSettingsJson() {
   border-radius: 9999px;
 }
 
+.badge-concept {
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 6px;
+}
+
 .settings-gear-btn {
   background: transparent;
   border: none;
@@ -849,8 +1101,25 @@ async function handleSaveSettingsJson() {
 }
 
 .settings-gear-btn:hover {
-  color: #334155;
+  color: #0f172a;
   background: #f1f5f9;
+}
+
+.btn-back-link {
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-back-link:hover {
+  background: #0f172a;
+  color: #fff;
+  border-color: #0f172a;
 }
 
 /* Toast */
@@ -1295,6 +1564,203 @@ async function handleSaveSettingsJson() {
   text-align: center;
   margin: 14px 0 0 0;
   line-height: 1.5;
+}
+
+/* ==================== SETTINGS PAGE STYLES ==================== */
+.settings-card {
+  gap: 22px;
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-label {
+  font-size: 13px;
+  color: #64748b;
+  margin-bottom: 8px;
+}
+
+.settings-label-strong {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+/* OS Segmented Control */
+.os-segmented-control {
+  display: flex;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 9999px;
+  gap: 2px;
+}
+
+.os-segment {
+  flex: 1;
+  padding: 8px 16px;
+  border-radius: 9999px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.os-segment.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+/* Radio Options Column */
+.radio-options-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.custom-radio-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.custom-radio-row input[type="radio"] {
+  accent-color: #0f172a;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.radio-text {
+  font-size: 14px;
+  color: #1e293b;
+  font-weight: 500;
+}
+
+.btn-select-dir {
+  margin-left: auto;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-select-dir:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+/* Dir Preview Box */
+.dir-preview-box {
+  background: #f8fafc;
+  border: 1px solid #f1f5f9;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.dir-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.dir-path-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  color: #0f172a;
+  margin-bottom: 4px;
+  cursor: pointer;
+  word-break: break-all;
+}
+.dir-path-value:hover {
+  text-decoration: underline;
+}
+
+.dir-path-note {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.section-divider-clean {
+  border-top: 1px solid #f1f5f9;
+  margin-bottom: 16px;
+}
+
+.settings-section-title {
+  margin: 0 0 12px 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* File Preview List */
+.files-preview-list {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.file-row-item {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.file-row-item:last-child {
+  border-bottom: none;
+}
+.file-row-item:hover {
+  background: #f8fafc;
+}
+
+.file-icon-wrap {
+  margin-right: 12px;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+}
+
+.file-name-text {
+  flex: 1;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #1e293b;
+}
+
+.badge-file {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+.badge-file.base {
+  background: #f1f5f9;
+  color: #475569;
+}
+.badge-file.group {
+  background: #e6f9ed;
+  color: #16a34a;
+}
+.badge-file.other {
+  background: #e0f2fe;
+  color: #0369a1;
 }
 
 /* MODALS */

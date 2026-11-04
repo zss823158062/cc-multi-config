@@ -98,3 +98,11 @@ export interface LaunchResult {
   terminalUsed: string;
   command: string;
 }
+
+export interface ConfigFileItem {
+  name: string;
+  fileType: 'base' | 'group' | 'other';
+  path: string;
+  exists: boolean;
+  sizeBytes: number;
+}

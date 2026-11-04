@@ -42,6 +42,7 @@ pub fn run() {
             open_file_in_editor,
             select_folder,
             launch_claude,
+            list_config_files,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
