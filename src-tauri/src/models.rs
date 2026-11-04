@@ -175,3 +175,13 @@ pub struct ConfigFileItem {
     pub exists: bool,
     pub size_bytes: u64,
 }
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct OsInfo {
+    pub os: String,
+    pub is_windows: bool,
+    pub is_macos: bool,
+    pub user_home: String,
+    pub default_claude_dir_repr: String,
+}

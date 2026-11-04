@@ -9,6 +9,7 @@ import type {
   ClaudeBinaryInfo,
   NodeTestResult,
   ConfigFileItem,
+  OsInfo,
 } from './types';
 
 // Navigation View: 'main' | 'settings'
@@ -29,8 +30,17 @@ const nodes = ref<RelayNode[]>([]);
 const currentGroupId = ref<string>('');
 const configFiles = ref<ConfigFileItem[]>([]);
 
-// Settings view specific state
-const selectedOsPreview = ref<'macOS' | 'Windows'>('macOS');
+// Host OS Detection
+const hostOs = ref<OsInfo>({
+  os: 'windows',
+  isWindows: true,
+  isMacos: false,
+  userHome: '',
+  defaultClaudeDirRepr: '%USERPROFILE%\\.claude\\',
+});
+
+// Settings view specific state (auto-detected on startup!)
+const selectedOsPreview = ref<'macOS' | 'Windows'>('Windows');
 const customDirInput = ref('');
 
 // Testing State
@@ -85,17 +95,32 @@ const activeNodeForCurrentGroup = computed(() => {
   return nodes.value.find((n) => n.id === currentGroup.value?.activeNodeId) || null;
 });
 
-// Short display path e.g. ~/.claude/my-opus-4.6.json
-const displaySettingsPath = computed(() => {
-  if (!currentGroup.value) return '~/.claude/my-custom.json';
-  return `~/.claude/${currentGroup.value.settingsFile}`;
+// Whether the currently active target OS is Windows
+const isCurrentWindows = computed(() => {
+  return selectedOsPreview.value === 'Windows';
 });
 
-// Command preview
-const previewCommand = computed(() => {
-  if (!currentGroup.value) {
-    return 'claude --settings ~/.claude/my-config.json';
+// Dynamic settings file path representation based on OS
+const displaySettingsPath = computed(() => {
+  const filename = currentGroup.value ? currentGroup.value.settingsFile : 'my-opus-4.6.json';
+
+  // Custom directory mode
+  if (preferences.value.configDirMode === 'custom' && customDirInput.value.trim()) {
+    const dir = customDirInput.value.trim().replace(/[/\\]+$/, '');
+    const sep = isCurrentWindows.value ? '\\' : '/';
+    return `"${dir}${sep}${filename}"`;
   }
+
+  // Auto/Default mode: dynamically formatted for Windows or macOS
+  if (isCurrentWindows.value) {
+    return `%USERPROFILE%\\.claude\\${filename}`;
+  } else {
+    return `~/.claude/${filename}`;
+  }
+});
+
+// Command preview dynamically formatted for Windows / macOS
+const previewCommand = computed(() => {
   return `claude --settings ${displaySettingsPath.value}`;
 });
 
@@ -110,6 +135,11 @@ const settingsDirDisplay = computed(() => {
     return configDirInfo.value?.resolvedPath || '%USERPROFILE%\\.claude\\';
   }
 });
+
+function toggleOsPreview() {
+  selectedOsPreview.value = selectedOsPreview.value === 'Windows' ? 'macOS' : 'Windows';
+  notify(`已切换预览系统为: ${selectedOsPreview.value}`, 'info', 1500);
+}
 
 function notify(text: string, type: 'success' | 'warning' | 'error' | 'info' = 'info', ms = 3000) {
   statusBanner.value = { text, type };
@@ -128,12 +158,19 @@ onMounted(async () => {
 
 async function loadData() {
   try {
-    const [cfg, allNodes, dirInfo, binaryInfo, files] = await Promise.all([
+    const [cfg, allNodes, dirInfo, binaryInfo, files, os] = await Promise.all([
       api.getLauncherConfig(),
       api.getNodes(),
       api.getClaudeConfigDirInfo(),
       api.detectClaudeBinary(),
       api.listConfigFiles().catch(() => []),
+      api.getOsInfo().catch(() => ({
+        os: 'windows',
+        isWindows: true,
+        isMacos: false,
+        userHome: '',
+        defaultClaudeDirRepr: '%USERPROFILE%\\.claude\\',
+      })),
     ]);
 
     groups.value = cfg.groups || [];
@@ -149,6 +186,10 @@ async function loadData() {
     configDirInfo.value = dirInfo;
     claudeBinary.value = binaryInfo;
     configFiles.value = files || [];
+    hostOs.value = os;
+
+    // Automatically set OS based on real host platform!
+    selectedOsPreview.value = os.isWindows ? 'Windows' : 'macOS';
 
     if (groups.value.length > 0) {
       if (!currentGroupId.value || !groups.value.some((g) => g.id === currentGroupId.value)) {
@@ -612,7 +653,16 @@ function openFilePreview(file: ConfigFileItem) {
           <section class="preview-section">
             <div class="preview-top-row">
               <h2 class="preview-heading">启动配置预览</h2>
-              <span class="badge-pill-gray">独立会话</span>
+              <div class="preview-badges-right">
+                <button
+                  class="badge-pill-os"
+                  @click="toggleOsPreview"
+                  :title="`当前系统: ${hostOs.os}，点击可切换为 ${isCurrentWindows ? 'macOS' : 'Windows'} 格式`"
+                >
+                  {{ isCurrentWindows ? 'Windows' : 'macOS' }}
+                </button>
+                <span class="badge-pill-gray">独立会话</span>
+              </div>
             </div>
 
             <div class="preview-group-desc">
@@ -624,7 +674,7 @@ function openFilePreview(file: ConfigFileItem) {
               <span v-else class="text-gray-light">未选择分组</span>
             </div>
 
-            <!-- Command Text Box -->
+            <!-- Command Text Box dynamically adapted for Windows / macOS -->
             <div class="code-box-line">
               <code>{{ previewCommand }}</code>
             </div>
@@ -684,7 +734,7 @@ function openFilePreview(file: ConfigFileItem) {
         <main class="settings-body">
           <!-- OS PREVIEW -->
           <section class="settings-card-item">
-            <div class="settings-sub-label">操作系统预览</div>
+            <div class="settings-sub-label">操作系统预览 (自动检测当前系统)</div>
             <div class="segmented-pill-wrap">
               <button
                 class="segmented-btn"
@@ -830,7 +880,9 @@ function openFilePreview(file: ConfigFileItem) {
               />
               <span class="slug-affix">.json</span>
             </div>
-            <span class="input-helper-text">将在 ~/.claude/ 下生成 my-{{ newGroupSlug || 'xxx' }}.json，绝不影响基础 settings.json</span>
+            <span class="input-helper-text">
+              将在 {{ isCurrentWindows ? '%USERPROFILE%\\.claude\\' : '~/.claude/' }} 下生成 my-{{ newGroupSlug || 'xxx' }}.json，绝不影响基础 settings.json
+            </span>
           </div>
 
           <div class="input-field-group">
@@ -990,21 +1042,18 @@ function openFilePreview(file: ConfigFileItem) {
 /* App Shell & Native Container */
 .app-shell {
   width: 100%;
-  height: 100vh;
+  height: 100%;
   background-color: #ffffff;
   overflow: hidden;
-  display: flex;
-  justify-content: center;
   box-sizing: border-box;
 }
 
 .app-container {
   width: 100%;
-  max-width: 600px;
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 20px 24px 16px 24px;
+  padding: 20px 24px 18px 24px;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -1273,6 +1322,10 @@ function openFilePreview(file: ConfigFileItem) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  max-height: 250px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 2px;
 }
 
 .empty-state-card {
@@ -1481,6 +1534,29 @@ function openFilePreview(file: ConfigFileItem) {
   font-size: 15px;
   font-weight: 700;
   color: #0f172a;
+}
+
+.preview-badges-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.badge-pill-os {
+  background: #e0f2fe;
+  color: #0369a1;
+  border: 1px solid #bae6fd;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.badge-pill-os:hover {
+  background: #0284c7;
+  color: #ffffff;
+  border-color: #0284c7;
 }
 
 .badge-pill-gray {

@@ -106,3 +106,11 @@ export interface ConfigFileItem {
   exists: boolean;
   sizeBytes: number;
 }
+
+export interface OsInfo {
+  os: string;
+  isWindows: boolean;
+  isMacos: boolean;
+  userHome: string;
+  defaultClaudeDirRepr: string;
+}

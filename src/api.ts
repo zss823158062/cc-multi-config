@@ -74,4 +74,7 @@ export const api = {
 
   listConfigFiles: () =>
     invoke<import('./types').ConfigFileItem[]>('list_config_files'),
+
+  getOsInfo: () =>
+    invoke<import('./types').OsInfo>('get_os_info'),
 };

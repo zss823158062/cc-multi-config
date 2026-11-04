@@ -3,7 +3,7 @@ use std::process::Command;
 use crate::models::{
     Group, RelayNode, Preferences, ConfigDirInfo, BaseSettingsStatus,
     ClaudeBinaryInfo, TerminalInfo, NodeTestResult, SettingsDiffResult,
-    BackupItem, LaunchResult, ConfigFileItem
+    BackupItem, LaunchResult, ConfigFileItem, OsInfo
 };
 use crate::store;
 use crate::paths::{resolve_claude_config_dir, get_safe_group_file_path};
@@ -327,4 +327,25 @@ pub fn list_config_files() -> Result<Vec<ConfigFileItem>, String> {
     }
 
     Ok(items)
+}
+
+#[tauri::command]
+pub fn get_os_info() -> Result<OsInfo, String> {
+    let os_name = std::env::consts::OS.to_string();
+    let is_windows = cfg!(windows);
+    let is_macos = cfg!(target_os = "macos");
+    let home = dirs::home_dir().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
+    let default_repr = if is_windows {
+        "%USERPROFILE%\\.claude\\".to_string()
+    } else {
+        "~/.claude/".to_string()
+    };
+
+    Ok(OsInfo {
+        os: os_name,
+        is_windows,
+        is_macos,
+        user_home: home,
+        default_claude_dir_repr: default_repr,
+    })
 }
