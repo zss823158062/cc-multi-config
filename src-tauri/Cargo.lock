@@ -429,7 +429,7 @@ dependencies = [
 
 [[package]]
 name = "cc-multi-config"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "chrono",
  "dirs 6.0.0",

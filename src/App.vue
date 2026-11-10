@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { api } from './api';
 import type {
   Group,
@@ -13,6 +13,13 @@ import type {
 
 // Navigation View: 'main' | 'settings'
 const currentView = ref<'main' | 'settings'>('main');
+
+// Node layout mode: 'grid' (2 columns) | 'list' (compact single column)
+const savedLayout = (localStorage.getItem('cc_node_layout_mode') as 'grid' | 'list') || 'grid';
+const nodeLayoutMode = ref<'grid' | 'list'>(savedLayout === 'list' ? 'list' : 'grid');
+watch(nodeLayoutMode, (val) => {
+  localStorage.setItem('cc_node_layout_mode', val);
+});
 
 // State
 const configDirInfo = ref<ConfigDirInfo | null>(null);
@@ -385,6 +392,7 @@ async function handleDeleteNode(nodeId: string) {
         currentGroup.value.activeNodeId = null;
       }
     }
+    showNodeModal.value = false;
     notify(`已删除节点「${name}」`, 'info');
   } catch (err: any) {
     notify(`删除失败: ${err}`, 'error');
@@ -563,12 +571,28 @@ function openFilePreview(file: ConfigFileItem) {
           <button class="toast-close" @click="statusBanner = null">×</button>
         </div>
 
-        <!-- MAIN SCROLLABLE CONTENT AREA -->
+        <!-- MAIN FLEX CONTENT AREA -->
         <main class="main-content">
-          <!-- SECTION 1: MODEL GROUP SELECTOR -->
-          <section class="block-section">
+          <!-- SECTION 1: COMPACT MODEL GROUP BAR -->
+          <section class="group-bar-section">
             <div class="block-label-row">
-              <span class="block-label">当前模型分组 / 配置文件</span>
+              <div class="group-label-left">
+                <span class="block-label">当前模型分组</span>
+                <span
+                  v-if="currentGroup"
+                  class="file-link-pill"
+                  @click="handleViewSettingsJson"
+                  title="点击查看 / 编辑此分组 JSON 配置"
+                >
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                    <polyline points="14 2 14 8 20 8"></polyline>
+                  </svg>
+                  {{ currentGroup.settingsFile }}
+                </span>
+                <span v-else class="file-link-disabled">my-&lt;slug&gt;.json</span>
+              </div>
+
               <button
                 v-if="currentGroup"
                 class="btn-text-danger"
@@ -593,45 +617,87 @@ function openFilePreview(file: ConfigFileItem) {
                 <div v-else class="select-empty-box" @click="openAddGroup">
                   暂无模型分组，点击右侧「+」新建分组
                 </div>
-                <svg class="chevron-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="chevron-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
               </div>
 
-              <!-- Circular Add Button -->
               <button class="btn-circle-add" @click="openAddGroup" title="新建模型分组">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
                   <line x1="12" y1="5" x2="12" y2="19"></line>
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
               </button>
             </div>
-
-            <div class="settings-filename-sub">
-              <span
-                v-if="currentGroup"
-                class="file-link"
-                @click="handleViewSettingsJson"
-                title="点击查看 / 编辑此分组 JSON 配置"
-              >
-                {{ currentGroup.settingsFile }}
-              </span>
-              <span v-else class="file-link-disabled">my-&lt;slug&gt;.json</span>
-            </div>
           </section>
 
-          <!-- SECTION 2: RELAY NODES -->
-          <section class="block-section">
-            <div class="block-header-row">
-              <h2 class="block-title">中转节点</h2>
-              <span class="block-sub">选择后更新当前分组配置</span>
+          <!-- SECTION 2: RELAY NODES (EXPANDS TO FILL AVAILABLE HEIGHT) -->
+          <section class="nodes-section">
+            <div class="nodes-toolbar-row">
+              <div class="nodes-toolbar-left">
+                <h2 class="block-title">中转节点</h2>
+                <span class="nodes-count-badge">{{ currentGroupNodes.length }}</span>
+                <span class="block-sub">点击即可切换</span>
+              </div>
+
+              <div class="nodes-toolbar-actions">
+                <!-- View Layout Toggle (2-Col Grid vs Compact List) -->
+                <div class="view-mode-switch" title="切换节点排列视图">
+                  <button
+                    class="view-mode-btn"
+                    :class="{ active: nodeLayoutMode === 'grid' }"
+                    @click="nodeLayoutMode = 'grid'"
+                    title="双列网格视图（同屏显示更多节点）"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+                      <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+                      <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+                      <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+                    </svg>
+                    <span>双列</span>
+                  </button>
+                  <button
+                    class="view-mode-btn"
+                    :class="{ active: nodeLayoutMode === 'list' }"
+                    @click="nodeLayoutMode = 'list'"
+                    title="紧凑列表视图"
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="8" y1="6" x2="21" y2="6"></line>
+                      <line x1="8" y1="12" x2="21" y2="12"></line>
+                      <line x1="8" y1="18" x2="21" y2="18"></line>
+                      <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                      <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                      <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                    </svg>
+                    <span>列表</span>
+                  </button>
+                </div>
+
+                <button class="btn-toolbar-action" :disabled="isTestingAll" @click="handleTestAllNodes">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                    <polyline points="22 4 12 14.01 9 11.01"></polyline>
+                  </svg>
+                  <span>{{ isTestingAll ? '测速中...' : '测速' }}</span>
+                </button>
+
+                <button class="btn-toolbar-action primary" @click="openAddNode">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                  </svg>
+                  <span>添加节点</span>
+                </button>
+              </div>
             </div>
 
-            <!-- Nodes Cards List -->
-            <div class="nodes-list-box">
+            <!-- Nodes Scrollable Container -->
+            <div class="nodes-list-box" :class="nodeLayoutMode === 'grid' ? 'layout-grid' : 'layout-list'">
               <div v-if="currentGroupNodes.length === 0" class="empty-state-card">
                 <p class="empty-title">当前分组暂无中转节点</p>
-                <p class="empty-desc">点击下方「+ 添加节点」为此分组添加中转 API 节点</p>
+                <p class="empty-desc">点击右上角「+ 添加节点」为此分组添加中转 API 节点</p>
               </div>
 
               <div
@@ -644,7 +710,7 @@ function openFilePreview(file: ConfigFileItem) {
                 <!-- Radio Status Circle -->
                 <div class="node-left-icon">
                   <div v-if="currentGroup?.activeNodeId === node.id" class="radio-check-circle">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2">
                       <polyline points="20 6 9 17 4 12"></polyline>
                     </svg>
                   </div>
@@ -653,20 +719,31 @@ function openFilePreview(file: ConfigFileItem) {
 
                 <!-- Info -->
                 <div class="node-info-col">
-                  <div class="node-title">{{ node.name }}</div>
-                  <div class="node-suburl">{{ node.baseUrl }}</div>
+                  <div class="node-title-row">
+                    <span class="node-title" :title="node.name">{{ node.name }}</span>
+                  </div>
+                  <div class="node-suburl" :title="node.baseUrl">{{ node.baseUrl }}</div>
                 </div>
 
                 <!-- Right Meta -->
                 <div class="node-meta-col">
-                  <div class="meta-tag-wrap">
+                  <div class="meta-top-row">
                     <span v-if="currentGroup?.activeNodeId === node.id" class="badge-active-node">
-                      当前节点
+                      当前
                     </span>
-                    <span v-else class="text-switch">切换</span>
+                    <button
+                      class="btn-card-edit"
+                      @click.stop="openEditNode(node)"
+                      title="编辑节点"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                      </svg>
+                    </button>
                   </div>
                   <div class="meta-speed-wrap">
-                    <span v-if="nodeTestingState[node.id]?.testing" class="speed-testing">测速中...</span>
+                    <span v-if="nodeTestingState[node.id]?.testing" class="speed-testing">测速中</span>
                     <span
                       v-else-if="nodeTestingState[node.id]?.result?.latencyMs != null && nodeTestingState[node.id]?.result?.connectivityOk"
                       class="speed-ms"
@@ -681,44 +758,27 @@ function openFilePreview(file: ConfigFileItem) {
                     >
                       失败
                     </span>
-                    <span v-else class="speed-none">未测试</span>
+                    <span v-else class="speed-none">未测速</span>
                   </div>
                 </div>
-
-                <!-- Hover Edit Icon -->
-                <button
-                  class="btn-card-edit"
-                  @click.stop="openEditNode(node)"
-                  title="编辑节点"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                  </svg>
-                </button>
               </div>
-            </div>
-
-            <!-- Two Pill Action Buttons -->
-            <div class="nodes-pill-row">
-              <button class="btn-pill" @click="openAddNode">
-                <span class="plus-icon">+</span>
-                <span>添加节点</span>
-              </button>
-              <button class="btn-pill" :disabled="isTestingAll" @click="handleTestAllNodes">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                  <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                </svg>
-                <span>{{ isTestingAll ? '正在测试...' : '测试节点' }}</span>
-              </button>
             </div>
           </section>
 
-          <!-- SECTION 3: CONFIG PREVIEW & LAUNCH -->
+          <!-- SECTION 3: COMPACT LAUNCH DOCK -->
           <section class="preview-section">
             <div class="preview-top-row">
-              <h2 class="preview-heading">启动配置预览</h2>
+              <div class="preview-title-left">
+                <h2 class="preview-heading">启动配置预览</h2>
+                <span class="preview-group-desc">
+                  <template v-if="currentGroup">
+                    <strong>{{ currentGroup.name }}</strong> ·
+                    <strong class="active-node-highlight">{{ activeNodeForCurrentGroup?.name || '未选节点' }}</strong>
+                  </template>
+                  <span v-else class="text-gray-light">未选择分组</span>
+                </span>
+              </div>
+
               <div class="preview-badges-right">
                 <button
                   class="badge-pill-os"
@@ -731,35 +791,27 @@ function openFilePreview(file: ConfigFileItem) {
               </div>
             </div>
 
-            <div class="preview-group-desc">
-              当前分组：
-              <span v-if="currentGroup">
-                <strong>{{ currentGroup.name }}</strong> ·
-                <strong>{{ activeNodeForCurrentGroup?.name || '未选择节点' }}</strong>
-              </span>
-              <span v-else class="text-gray-light">未选择分组</span>
-            </div>
+            <!-- Inline Command + Copy Action Row -->
+            <div class="command-action-row">
+              <div class="code-box-line" :title="previewCommand">
+                <code>{{ previewCommand }}</code>
+              </div>
 
-            <!-- Command Text Box dynamically adapted for Windows / macOS -->
-            <div class="code-box-line">
-              <code>{{ previewCommand }}</code>
+              <button
+                class="btn-black-pill"
+                :class="{ copied: copiedTooltip }"
+                @click="handleCopyCommand"
+              >
+                <svg v-if="!copiedTooltip" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+                <span>{{ copiedTooltip ? '已复制命令' : '复制启动命令' }}</span>
+              </button>
             </div>
-
-            <!-- Full Width Black Pill Button -->
-            <button
-              class="btn-black-pill"
-              :class="{ copied: copiedTooltip }"
-              @click="handleCopyCommand"
-            >
-              <svg v-if="!copiedTooltip" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-              </svg>
-              <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <polyline points="20 6 9 17 4 12"></polyline>
-              </svg>
-              <span>{{ copiedTooltip ? '已复制启动命令！' : '复制启动命令' }}</span>
-            </button>
           </section>
         </main>
       </template>
@@ -1067,7 +1119,7 @@ function openFilePreview(file: ConfigFileItem) {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 20px 24px 18px 24px;
+  padding: 14px 20px 14px 20px;
   box-sizing: border-box;
   overflow: hidden;
 }
@@ -1077,37 +1129,28 @@ function openFilePreview(file: ConfigFileItem) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 14px;
+  padding-bottom: 10px;
   flex-shrink: 0;
 }
 
 .header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 9px;
 }
 
 .app-header-logo {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
   object-fit: cover;
   flex-shrink: 0;
 }
 
-.app-icon {
-  width: 26px;
-  height: 26px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #0f172a;
-}
-
 .app-title {
   margin: 0;
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
   color: #0f172a;
   letter-spacing: -0.01em;
@@ -1123,19 +1166,10 @@ function openFilePreview(file: ConfigFileItem) {
   background: #e6f9ed;
   color: #16a34a;
   border: 1px solid #bbf7d0;
-  font-size: 12px;
-  font-weight: 500;
-  padding: 3px 10px;
-  border-radius: 9999px;
-}
-
-.badge-concept {
-  background: #f1f5f9;
-  color: #475569;
   font-size: 11px;
   font-weight: 500;
-  padding: 3px 9px;
-  border-radius: 6px;
+  padding: 2px 9px;
+  border-radius: 9999px;
 }
 
 .icon-gear-btn {
@@ -1143,7 +1177,7 @@ function openFilePreview(file: ConfigFileItem) {
   border: none;
   color: #94a3b8;
   cursor: pointer;
-  padding: 5px;
+  padding: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1175,13 +1209,13 @@ function openFilePreview(file: ConfigFileItem) {
 
 /* Toast */
 .status-toast {
-  padding: 7px 12px;
+  padding: 6px 12px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 12.5px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   flex-shrink: 0;
 }
 .status-toast.success { background: #dcfce7; color: #15803d; }
@@ -1190,34 +1224,70 @@ function openFilePreview(file: ConfigFileItem) {
 .status-toast.info { background: #e0f2fe; color: #0369a1; }
 .toast-close { background: none; border: none; font-size: 16px; cursor: pointer; color: inherit; }
 
-/* Main Scrollable Area */
+/* Main Flex Content Area (Non-scrolling outer container so nodes list fills height) */
 .main-content {
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  padding-right: 2px;
+  gap: 12px;
 }
 
-/* Block Section */
-.block-section {
+/* Section 1: Compact Group Selector Bar */
+.group-bar-section {
+  flex-shrink: 0;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 11px;
+  padding: 9px 12px;
   display: flex;
   flex-direction: column;
+  gap: 6px;
 }
 
 .block-label-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 7px;
+}
+
+.group-label-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 
 .block-label {
-  font-size: 13px;
+  font-size: 12px;
   color: #64748b;
-  font-weight: 500;
+  font-weight: 600;
+}
+
+.file-link-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: #475569;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.file-link-pill:hover {
+  border-color: #0f172a;
+  color: #0f172a;
+}
+
+.file-link-disabled {
+  font-size: 11.5px;
+  color: #94a3b8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .btn-text-danger {
@@ -1234,7 +1304,7 @@ function openFilePreview(file: ConfigFileItem) {
 
 .group-select-row {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
 }
 
@@ -1250,10 +1320,10 @@ function openFilePreview(file: ConfigFileItem) {
   appearance: none;
   background: #ffffff;
   border: 1px solid #cbd5e1;
-  border-radius: 10px;
-  padding: 9px 36px 9px 14px;
-  font-size: 15px;
-  font-weight: 500;
+  border-radius: 8px;
+  padding: 6px 32px 6px 11px;
+  font-size: 14px;
+  font-weight: 600;
   color: #0f172a;
   outline: none;
   cursor: pointer;
@@ -1267,25 +1337,26 @@ function openFilePreview(file: ConfigFileItem) {
 .select-empty-box {
   width: 100%;
   border: 1px dashed #cbd5e1;
-  border-radius: 10px;
-  padding: 9px 14px;
-  font-size: 14px;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 6px 11px;
+  font-size: 13px;
   color: #94a3b8;
   cursor: pointer;
 }
 
 .chevron-icon {
   position: absolute;
-  right: 14px;
+  right: 11px;
   pointer-events: none;
   color: #64748b;
 }
 
 .btn-circle-add {
-  width: 42px;
-  height: 42px;
+  width: 34px;
+  height: 34px;
   border: 1px solid #cbd5e1;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #ffffff;
   color: #334155;
   display: flex;
@@ -1297,72 +1368,164 @@ function openFilePreview(file: ConfigFileItem) {
 }
 
 .btn-circle-add:hover {
-  background: #f8fafc;
-  border-color: #94a3b8;
-  color: #0f172a;
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #ffffff;
 }
 
-.settings-filename-sub {
-  margin-top: 5px;
-  font-size: 13px;
-  color: #64748b;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+/* Section 2: Middle Nodes Section (Fills Remaining Height) */
+.nodes-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-.file-link {
-  cursor: pointer;
-}
-.file-link:hover {
-  text-decoration: underline;
-  color: #0f172a;
-}
-
-.file-link-disabled {
-  color: #94a3b8;
-}
-
-/* Middle Nodes Section */
-.block-header-row {
+.nodes-toolbar-row {
   display: flex;
   justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.nodes-toolbar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .block-title {
   margin: 0;
-  font-size: 15px;
+  font-size: 14.5px;
   font-weight: 700;
   color: #0f172a;
 }
 
-.block-sub {
-  font-size: 12px;
-  color: #64748b;
+.nodes-count-badge {
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 9999px;
 }
 
-.nodes-list-box {
+.block-sub {
+  font-size: 11.5px;
+  color: #94a3b8;
+  margin-left: 2px;
+}
+
+.nodes-toolbar-actions {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 250px;
+  align-items: center;
+  gap: 6px;
+}
+
+.view-mode-switch {
+  display: inline-flex;
+  background: #f1f5f9;
+  padding: 2px;
+  border-radius: 7px;
+  gap: 2px;
+}
+
+.view-mode-btn {
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 3px 7px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.view-mode-btn.active {
+  background: #ffffff;
+  color: #0f172a;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.btn-toolbar-action {
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.btn-toolbar-action:hover:not(:disabled) {
+  border-color: #94a3b8;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.btn-toolbar-action.primary {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #ffffff;
+}
+
+.btn-toolbar-action.primary:hover {
+  background: #1e293b;
+  border-color: #1e293b;
+  color: #ffffff;
+}
+
+.btn-toolbar-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Scrollable Nodes Container */
+.nodes-list-box {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-right: 2px;
+  padding-right: 3px;
+  align-content: start;
+}
+
+.nodes-list-box.layout-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.nodes-list-box.layout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
 .empty-state-card {
-  padding: 20px;
+  grid-column: 1 / -1;
+  padding: 28px 20px;
   border: 1px dashed #cbd5e1;
-  border-radius: 12px;
+  border-radius: 10px;
   text-align: center;
   color: #64748b;
 }
 
 .empty-title {
   margin: 0 0 4px 0;
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 600;
+  font-size: 13.5px;
   color: #334155;
 }
 
@@ -1372,38 +1535,40 @@ function openFilePreview(file: ConfigFileItem) {
   color: #94a3b8;
 }
 
-/* Node item card */
+/* Node item card (Compact for both Grid and List) */
 .node-item-card {
   position: relative;
   display: flex;
   align-items: center;
-  padding: 12px 16px;
+  padding: 8px 11px;
   border: 1px solid #e2e8f0;
-  border-radius: 12px;
+  border-radius: 9px;
   background: #ffffff;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.14s;
+  min-width: 0;
 }
 
 .node-item-card:hover {
-  border-color: #cbd5e1;
-  background: #fafafa;
+  border-color: #94a3b8;
+  background: #f8fafc;
 }
 
 .node-item-card.active {
   border: 1.5px solid #10b981;
-  background: #ffffff;
+  background: #f0fdf4;
 }
 
 .node-left-icon {
-  margin-right: 14px;
+  margin-right: 9px;
   display: flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .radio-check-circle {
-  width: 20px;
-  height: 20px;
+  width: 17px;
+  height: 17px;
   border-radius: 50%;
   background: #10b981;
   color: #ffffff;
@@ -1413,164 +1578,185 @@ function openFilePreview(file: ConfigFileItem) {
 }
 
 .radio-empty-circle {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   border-radius: 50%;
-  background: #94a3b8;
+  border: 1.5px solid #cbd5e1;
+  background: #ffffff;
+}
+
+.node-item-card:hover .radio-empty-circle {
+  border-color: #94a3b8;
 }
 
 .node-info-col {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.node-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 .node-title {
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 600;
   color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .node-suburl {
-  font-size: 13px;
+  font-size: 11.5px;
   color: #64748b;
   margin-top: 1px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .node-meta-col {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 3px;
-  margin-left: 12px;
+  justify-content: center;
+  gap: 2px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.meta-top-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 18px;
 }
 
 .badge-active-node {
   background: #dcfce7;
   color: #15803d;
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
 }
 
-.text-switch {
-  font-size: 13px;
-  color: #64748b;
-}
-
-.node-item-card:hover .text-switch {
-  color: #0f172a;
+.meta-speed-wrap {
+  display: flex;
+  align-items: center;
 }
 
 .speed-ms {
-  font-size: 13px;
+  font-size: 12px;
   color: #10b981;
-  font-weight: 500;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .speed-testing {
-  font-size: 12px;
+  font-size: 11px;
   color: #3b82f6;
 }
 
 .speed-error {
-  font-size: 12px;
+  font-size: 11px;
   color: #ef4444;
-  font-weight: 500;
+  font-weight: 600;
   cursor: help;
 }
 
 .speed-none {
-  font-size: 13px;
+  font-size: 11px;
   color: #94a3b8;
 }
 
 .btn-card-edit {
-  position: absolute;
-  top: 8px;
-  right: 8px;
   background: transparent;
   border: none;
-  color: #cbd5e1;
-  padding: 4px;
+  color: #94a3b8;
+  padding: 2px 3px;
   border-radius: 4px;
   cursor: pointer;
-  display: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+  transition: all 0.15s;
 }
 
 .node-item-card:hover .btn-card-edit {
-  display: block;
+  opacity: 1;
 }
 
 .btn-card-edit:hover {
   color: #0f172a;
-  background: #f1f5f9;
+  background: #e2e8f0;
 }
 
-/* Action Pill Buttons below nodes */
-.nodes-pill-row {
-  display: flex;
-  gap: 12px;
-  margin-top: 10px;
-}
-
-.btn-pill {
-  flex: 1;
-  border: 1px solid #cbd5e1;
-  border-radius: 9999px;
-  background: #ffffff;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 9px 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.btn-pill:hover:not(:disabled) {
-  border-color: #94a3b8;
-  background: #f8fafc;
-  color: #0f172a;
-}
-
-.btn-pill:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.plus-icon {
-  font-size: 16px;
-}
-
-/* SECTION 3: LAUNCH CONFIG PREVIEW */
+/* SECTION 3: COMPACT LAUNCH CONFIG PREVIEW DOCK */
 .preview-section {
-  border-top: 1px solid #f1f5f9;
-  padding-top: 16px;
+  flex-shrink: 0;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 10px;
   display: flex;
   flex-direction: column;
+  gap: 7px;
 }
 
 .preview-top-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+}
+
+.preview-title-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .preview-heading {
   margin: 0;
-  font-size: 15px;
+  font-size: 13.5px;
   font-weight: 700;
   color: #0f172a;
+  flex-shrink: 0;
+}
+
+.preview-group-desc {
+  font-size: 12px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.preview-group-desc strong {
+  color: #0f172a;
+}
+
+.active-node-highlight {
+  color: #059669 !important;
+}
+
+.text-gray-light {
+  color: #94a3b8;
 }
 
 .preview-badges-right {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  flex-shrink: 0;
 }
 
 .badge-pill-os {
@@ -1579,8 +1765,8 @@ function openFilePreview(file: ConfigFileItem) {
   border: 1px solid #bae6fd;
   font-size: 11px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 2px 7px;
+  border-radius: 5px;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -1595,46 +1781,45 @@ function openFilePreview(file: ConfigFileItem) {
   color: #475569;
   font-size: 11px;
   font-weight: 500;
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 2px 7px;
+  border-radius: 5px;
 }
 
-.preview-group-desc {
-  font-size: 13px;
-  color: #475569;
-  margin-top: 3px;
-}
-
-.preview-group-desc strong {
-  color: #0f172a;
-}
-
-.text-gray-light {
-  color: #94a3b8;
+.command-action-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .code-box-line {
-  margin: 14px 0 12px 0;
+  flex: 1;
+  min-width: 0;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 7px 11px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 13px;
-  color: #475569;
+  font-size: 12px;
+  color: #334155;
   user-select: all;
-  word-break: break-all;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .btn-black-pill {
-  width: 100%;
+  flex-shrink: 0;
   background: #0f172a;
   color: #ffffff;
   border: none;
-  border-radius: 9999px;
-  padding: 12px 20px;
-  font-size: 14px;
-  font-weight: 500;
-  display: flex;
+  border-radius: 8px;
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: 6px;
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -1645,14 +1830,6 @@ function openFilePreview(file: ConfigFileItem) {
 
 .btn-black-pill.copied {
   background: #16a34a;
-}
-
-.bottom-disclaimer {
-  font-size: 12px;
-  color: #94a3b8;
-  text-align: center;
-  margin: 12px 0 0 0;
-  line-height: 1.4;
 }
 
 /* ==================== SETTINGS PAGE STYLES ==================== */
@@ -1801,7 +1978,7 @@ function openFilePreview(file: ConfigFileItem) {
   border-radius: 12px;
   overflow-y: auto;
   overflow-x: hidden;
-  max-height: 240px;
+  max-height: 280px;
   background: #ffffff;
 }
 
@@ -1982,14 +2159,6 @@ function openFilePreview(file: ConfigFileItem) {
   color: #64748b;
 }
 
-.input-grid-2 {
-  display: flex;
-  gap: 12px;
-}
-.input-grid-2 .input-field-group {
-  flex: 1;
-}
-
 .password-input-wrapper {
   position: relative;
   display: flex;
@@ -2004,19 +2173,6 @@ function openFilePreview(file: ConfigFileItem) {
   font-size: 12px;
   color: #64748b;
   cursor: pointer;
-}
-
-.modal-divider-text {
-  border-bottom: 1px solid #f1f5f9;
-  line-height: 0.1em;
-  margin: 8px 0;
-  text-align: center;
-}
-.modal-divider-text span {
-  background: #fff;
-  padding: 0 10px;
-  color: #94a3b8;
-  font-size: 12px;
 }
 
 .json-editor-area {
